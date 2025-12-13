@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package metadata;
+
+option go_package = "./proto/gen";
+
+// Metadata service for managing table metadata and transaction commits
+service MetadataService {
+  rpc CreateTable(CreateTableRequest) returns (CreateTableResponse);
+  rpc GetLatestVersion(GetLatestVersionRequest) returns (GetLatestVersionResponse);
+  rpc GetSnapshot(GetSnapshotRequest) returns (GetSnapshotResponse);
+  rpc Commit(CommitRequest) returns (CommitResponse);
+  rpc ListVersions(ListVersionsRequest) returns (ListVersionsResponse);
+  rpc Leader(LeaderRequest) returns (LeaderResponse);
+  rpc Health(HealthRequest) returns (HealthResponse);
+}
+
+message CreateTableRequest {
+  string table_name = 1;
+  Schema schema = 2;
+}
+
+message CreateTableResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message GetLatestVersionRequest {
+  string table_name = 1;
+}
+
+message GetLatestVersionResponse {
+  uint64 version = 1;
+  string error = 2;
+}
+
+message GetSnapshotRequest {
+  string table_name = 1;
+  uint64 version = 2;
+}
+
+message GetSnapshotResponse {
+  repeated FileInfo files = 1;
+  Schema schema = 2;
+  string error = 3;
+}
+
+message CommitRequest {
+  string table_name = 1;
+  uint64 base_version = 2;
+  string txn_id = 3;
+  repeated FileAdd adds = 4;
+  repeated FileRemove removes = 5;
+}
+
+message CommitResponse {
+  uint64 new_version = 1;
+  string error = 2;
+}
+
+message ListVersionsRequest {
+  string table_name = 1;
+}
+
+message ListVersionsResponse {
+  repeated uint64 versions = 1;
+  string error = 2;
+}
+
+message LeaderRequest {}
+
+message LeaderResponse {
+  string leader_id = 1;
+  string leader_address = 2;
+}
+
+message HealthRequest {}
+
+message HealthResponse {
+  bool healthy = 1;
+  string status = 2;
+}
+
+message Schema {
+  repeated Field fields = 1;
+}
+
+message Field {
+  string name = 1;
+  string type = 2;
+  bool nullable = 3;
+}
+
+message FileInfo {
+  string path = 1;
+  uint64 rows = 2;
+  uint64 size = 3;
+  map<string, string> partition = 4;
+  FileStats stats = 5;
+}
+
+message FileStats {
+  map<string, string> min_values = 1;
+  map<string, string> max_values = 2;
+}
+
+message FileAdd {
+  string path = 1;
+  uint64 rows = 2;
+  uint64 size = 3;
+  map<string, string> partition = 4;
+  FileStats stats = 5;
+}
+
+message FileRemove {
+  string path = 1;
+}

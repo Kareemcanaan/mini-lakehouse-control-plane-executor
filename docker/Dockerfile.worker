@@ -1,0 +1,32 @@
+# Build stage
+FROM rust:1.75-alpine AS builder
+
+# Install build dependencies
+RUN apk add --no-cache musl-dev protobuf-dev
+
+WORKDIR /app
+
+# Copy Cargo files
+COPY Cargo.toml Cargo.lock ./
+COPY worker/Cargo.toml ./worker/
+
+# Copy proto files for build.rs
+COPY proto ./proto
+
+# Copy source code
+COPY worker ./worker
+
+# Build the worker
+RUN cargo build --release --bin worker
+
+# Runtime stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+WORKDIR /root/
+
+COPY --from=builder /app/target/release/worker .
+
+EXPOSE 8060
+
+CMD ["./worker"]

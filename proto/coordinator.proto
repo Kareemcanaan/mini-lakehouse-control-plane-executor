@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+package coordinator;
+
+option go_package = "mini-lakehouse/proto/coordinator";
+
+// Coordinator service for worker registration and task reporting
+service CoordinatorService {
+  rpc RegisterWorker(RegisterWorkerRequest) returns (RegisterWorkerResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc ReportTaskComplete(ReportTaskCompleteRequest) returns (ReportTaskCompleteResponse);
+}
+
+message RegisterWorkerRequest {
+  string worker_id = 1;
+  string address = 2;
+  WorkerCapabilities capabilities = 3;
+}
+
+message RegisterWorkerResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  WorkerStatus status = 2;
+}
+
+message HeartbeatResponse {
+  bool success = 1;
+  repeated string cancel_tasks = 2;
+}
+
+message ReportTaskCompleteRequest {
+  string worker_id = 1;
+  string job_id = 2;
+  uint32 stage = 3;
+  uint32 task_id = 4;
+  uint32 attempt = 5;
+  TaskResult result = 6;
+}
+
+message ReportTaskCompleteResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message WorkerCapabilities {
+  uint32 max_concurrent_tasks = 1;
+  repeated string supported_operations = 2;
+}
+
+message WorkerStatus {
+  uint32 active_tasks = 1;
+  double cpu_usage = 2;
+  double memory_usage = 3;
+}
+
+message TaskResult {
+  bool success = 1;
+  string error = 2;
+  repeated TaskOutput outputs = 3;
+  TaskMetrics metrics = 4;
+}
+
+message TaskOutput {
+  uint32 partition = 1;
+  string path = 2;
+  uint64 rows = 3;
+  uint64 size = 4;
+}
+
+message TaskMetrics {
+  uint64 duration_ms = 1;
+  uint64 rows_processed = 2;
+  uint64 bytes_read = 3;
+  uint64 bytes_written = 4;
+}

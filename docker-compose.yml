@@ -1,0 +1,200 @@
+version: '3.8'
+
+services:
+  # Object Storage (MinIO)
+  minio:
+    image: minio/minio:latest
+    container_name: mini-lakehouse-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Create MinIO buckets
+  minio-setup:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin;
+      /usr/bin/mc mb myminio/lake;
+      exit 0;
+      "
+
+  # Metadata Service Node 1 (Raft Leader)
+  meta-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.metad
+    container_name: mini-lakehouse-meta-1
+    ports:
+      - "8080:8080"
+      - "8081:8081"  # Raft port
+    environment:
+      - RAFT_NODE_ID=1
+      - RAFT_BIND_ADDR=0.0.0.0:8081
+      - RAFT_PEERS=meta-1:8081,meta-2:8082,meta-3:8083
+      - GRPC_BIND_ADDR=0.0.0.0:8080
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=lake
+    depends_on:
+      - minio-setup
+    volumes:
+      - meta1_data:/data
+
+  # Metadata Service Node 2 (Raft Follower)
+  meta-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.metad
+    container_name: mini-lakehouse-meta-2
+    ports:
+      - "8090:8080"
+      - "8082:8082"  # Raft port
+    environment:
+      - RAFT_NODE_ID=2
+      - RAFT_BIND_ADDR=0.0.0.0:8082
+      - RAFT_PEERS=meta-1:8081,meta-2:8082,meta-3:8083
+      - GRPC_BIND_ADDR=0.0.0.0:8080
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=lake
+    depends_on:
+      - minio-setup
+    volumes:
+      - meta2_data:/data
+
+  # Metadata Service Node 3 (Raft Follower)
+  meta-3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.metad
+    container_name: mini-lakehouse-meta-3
+    ports:
+      - "8100:8080"
+      - "8083:8083"  # Raft port
+    environment:
+      - RAFT_NODE_ID=3
+      - RAFT_BIND_ADDR=0.0.0.0:8083
+      - RAFT_PEERS=meta-1:8081,meta-2:8082,meta-3:8083
+      - GRPC_BIND_ADDR=0.0.0.0:8080
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=lake
+    depends_on:
+      - minio-setup
+    volumes:
+      - meta3_data:/data
+
+  # Coordinator Service
+  coordinator:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.coordinator
+    container_name: mini-lakehouse-coordinator
+    ports:
+      - "8070:8070"
+    environment:
+      - GRPC_BIND_ADDR=0.0.0.0:8070
+      - METADATA_ENDPOINTS=meta-1:8080,meta-2:8080,meta-3:8080
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=lake
+    depends_on:
+      - meta-1
+      - meta-2
+      - meta-3
+
+  # Worker 1
+  worker-1:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    container_name: mini-lakehouse-worker-1
+    ports:
+      - "8060:8060"
+    environment:
+      - WORKER_ID=worker-1
+      - GRPC_BIND_ADDR=0.0.0.0:8060
+      - COORDINATOR_ENDPOINT=coordinator:8070
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=lake
+    depends_on:
+      - coordinator
+
+  # Worker 2
+  worker-2:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    container_name: mini-lakehouse-worker-2
+    ports:
+      - "8061:8060"
+    environment:
+      - WORKER_ID=worker-2
+      - GRPC_BIND_ADDR=0.0.0.0:8060
+      - COORDINATOR_ENDPOINT=coordinator:8070
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=lake
+    depends_on:
+      - coordinator
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mini-lakehouse-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mini-lakehouse-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+
+volumes:
+  minio_data:
+  meta1_data:
+  meta2_data:
+  meta3_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  default:
+    name: mini-lakehouse-network
