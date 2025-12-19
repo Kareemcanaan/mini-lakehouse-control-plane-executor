@@ -121,8 +121,8 @@ func (c *Client) GetObject(ctx context.Context, objectPath string) (*minio.Objec
 	return nil, fmt.Errorf("failed to get object after %d attempts: %w", c.retryCount+1, lastErr)
 }
 
-// ListObjects lists objects with a given prefix
-func (c *Client) ListObjects(ctx context.Context, prefix string) <-chan minio.ObjectInfo {
+// ListObjectsChannel lists objects with a given prefix and returns a channel
+func (c *Client) ListObjectsChannel(ctx context.Context, prefix string) <-chan minio.ObjectInfo {
 	return c.client.ListObjects(ctx, c.bucketName, minio.ListObjectsOptions{
 		Prefix:    prefix,
 		Recursive: true,
@@ -145,4 +145,68 @@ func (c *Client) ObjectExists(ctx context.Context, objectPath string) (bool, err
 		return false, err
 	}
 	return true, nil
+}
+
+// CopyObject copies an object from source to destination
+func (c *Client) CopyObject(ctx context.Context, srcPath, destPath string) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= c.retryCount; attempt++ {
+		if attempt > 0 {
+			time.Sleep(c.retryDelay * time.Duration(attempt))
+		}
+
+		// Create copy source
+		src := minio.CopySrcOptions{
+			Bucket: c.bucketName,
+			Object: srcPath,
+		}
+
+		// Create copy destination
+		dst := minio.CopyDestOptions{
+			Bucket: c.bucketName,
+			Object: destPath,
+		}
+
+		_, err := c.client.CopyObject(ctx, dst, src)
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+	}
+
+	return fmt.Errorf("failed to copy object after %d attempts: %w", c.retryCount+1, lastErr)
+}
+
+// ObjectInfo represents information about an object
+type ObjectInfo struct {
+	Key          string
+	Size         int64
+	LastModified time.Time
+	ContentType  string
+}
+
+// ListObjects lists objects with a given prefix and returns a slice
+func (c *Client) ListObjects(ctx context.Context, prefix string) ([]ObjectInfo, error) {
+	var objects []ObjectInfo
+
+	objectCh := c.client.ListObjects(ctx, c.bucketName, minio.ListObjectsOptions{
+		Prefix:    prefix,
+		Recursive: true,
+	})
+
+	for object := range objectCh {
+		if object.Err != nil {
+			return nil, fmt.Errorf("error listing objects: %w", object.Err)
+		}
+
+		objects = append(objects, ObjectInfo{
+			Key:          object.Key,
+			Size:         object.Size,
+			LastModified: object.LastModified,
+			ContentType:  object.ContentType,
+		})
+	}
+
+	return objects, nil
 }

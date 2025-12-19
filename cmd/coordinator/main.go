@@ -4,9 +4,11 @@ import (
 	"context"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"mini-lakehouse/pkg/coordinator"
 	"mini-lakehouse/pkg/storage"
@@ -31,11 +33,20 @@ func main() {
 		log.Fatalf("Failed to create storage client: %v", err)
 	}
 
+	// Initialize metadata client (placeholder for now)
+	// In production, this would connect to the actual metadata service
+	var metadataClient gen.MetadataServiceClient = nil
+
 	// Initialize components
 	workerManager := coordinator.NewWorkerManager()
-	queryPlanner := coordinator.NewQueryPlanner()
+	queryPlanner := coordinator.NewQueryPlannerWithMetadata(metadataClient)
 	taskScheduler := coordinator.NewTaskScheduler(workerManager, queryPlanner)
 	faultToleranceManager := coordinator.NewFaultToleranceManager(storageClient, taskScheduler, workerManager)
+
+	// Create services
+	distributedExecutor := coordinator.NewDistributedQueryExecutor(taskScheduler, queryPlanner, metadataClient, faultToleranceManager)
+	queryExecutionService := coordinator.NewQueryExecutionService(taskScheduler, queryPlanner, distributedExecutor)
+	tableService := coordinator.NewTableService(metadataClient, storageClient, taskScheduler, queryPlanner)
 
 	// Create gRPC service
 	grpcService := coordinator.NewCoordinatorGRPCService(
@@ -44,9 +55,8 @@ func main() {
 		faultToleranceManager,
 	)
 
-	// Create query execution service
-	queryExecutionService := coordinator.NewQueryExecutionService(taskScheduler, queryPlanner)
-	_ = queryExecutionService // Will be used for REST API or other interfaces
+	// Create REST API
+	restAPI := coordinator.NewRestAPI(tableService, queryExecutionService, metadataClient, 8081)
 
 	// Start background services
 	ctx, cancel := context.WithCancel(context.Background())
@@ -61,6 +71,9 @@ func main() {
 	// Start fault detection
 	go faultToleranceManager.StartFaultDetection(ctx)
 
+	// Start distributed query executor background services
+	go distributedExecutor.StartBackgroundServices(ctx)
+
 	// Start gRPC server
 	lis, err := net.Listen("tcp", ":8080")
 	if err != nil {
@@ -72,10 +85,17 @@ func main() {
 
 	log.Println("Coordinator gRPC server listening on :8080")
 
-	// Start server in background
+	// Start gRPC server in background
 	go func() {
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("Failed to serve gRPC: %v", err)
+		}
+	}()
+
+	// Start REST API in background
+	go func() {
+		if err := restAPI.Start(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Failed to serve REST API: %v", err)
 		}
 	}()
 
@@ -88,6 +108,15 @@ func main() {
 
 	// Graceful shutdown
 	cancel()
+
+	// Stop REST API
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := restAPI.Stop(shutdownCtx); err != nil {
+		log.Printf("Error stopping REST API: %v", err)
+	}
+
+	// Stop gRPC server
 	grpcServer.GracefulStop()
 
 	log.Println("Coordinator service stopped")

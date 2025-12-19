@@ -132,47 +132,68 @@ func (s *CoordinatorGRPCService) ReportTaskComplete(ctx context.Context, req *ge
 
 // QueryExecutionService provides query execution orchestration
 type QueryExecutionService struct {
-	taskScheduler *TaskScheduler
-	queryPlanner  *QueryPlanner
+	taskScheduler       *TaskScheduler
+	queryPlanner        *QueryPlanner
+	distributedExecutor *DistributedQueryExecutor
 }
 
 // NewQueryExecutionService creates a new query execution service
-func NewQueryExecutionService(taskScheduler *TaskScheduler, queryPlanner *QueryPlanner) *QueryExecutionService {
+func NewQueryExecutionService(
+	taskScheduler *TaskScheduler,
+	queryPlanner *QueryPlanner,
+	distributedExecutor *DistributedQueryExecutor,
+) *QueryExecutionService {
 	return &QueryExecutionService{
-		taskScheduler: taskScheduler,
-		queryPlanner:  queryPlanner,
+		taskScheduler:       taskScheduler,
+		queryPlanner:        queryPlanner,
+		distributedExecutor: distributedExecutor,
 	}
 }
 
 // ExecuteQuery executes a query and returns the job ID
 func (qes *QueryExecutionService) ExecuteQuery(query *SimpleQuery) (string, error) {
-	log.Printf("Executing query on table %s", query.TableName)
+	log.Printf("Executing distributed query on table %s", query.TableName)
 
-	// Schedule the query
-	plan, err := qes.taskScheduler.ScheduleQuery(query)
+	// Execute the query using the distributed executor
+	ctx := context.Background()
+	execution, err := qes.distributedExecutor.ExecuteQuery(ctx, query)
 	if err != nil {
-		return "", fmt.Errorf("failed to schedule query: %w", err)
+		return "", fmt.Errorf("failed to execute query: %w", err)
 	}
 
-	log.Printf("Query scheduled with job ID %s", plan.JobID)
-	return plan.JobID, nil
+	log.Printf("Distributed query started with job ID %s", execution.JobID)
+	return execution.JobID, nil
 }
 
 // GetQueryStatus returns the status of a query
 func (qes *QueryExecutionService) GetQueryStatus(jobID string) (*QueryStatus, error) {
-	return qes.taskScheduler.GetQueryStatus(jobID)
+	// Get execution from distributed executor
+	execution, err := qes.distributedExecutor.GetQueryExecution(jobID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert to QueryStatus format
+	status := &QueryStatus{
+		JobID:  execution.JobID,
+		Status: string(execution.Status),
+	}
+
+	// Get detailed metrics
+	metrics, err := qes.distributedExecutor.GetQueryMetrics(jobID)
+	if err == nil {
+		status.TotalTasks = metrics.TotalTasks
+		status.CompletedTasks = metrics.CompletedTasks
+		status.FailedTasks = metrics.FailedTasks
+		status.RunningTasks = metrics.RunningTasks
+	}
+
+	return status, nil
 }
 
 // CancelQuery cancels a running query
 func (qes *QueryExecutionService) CancelQuery(jobID string) error {
-	// TODO: Implement query cancellation
-	// This would involve:
-	// 1. Marking the query as cancelled
-	// 2. Cancelling all running tasks
-	// 3. Cleaning up resources
-
-	log.Printf("Query cancellation requested for job %s (not yet implemented)", jobID)
-	return fmt.Errorf("query cancellation not yet implemented")
+	return qes.distributedExecutor.CancelQuery(jobID)
 }
 
 // WaitForQueryCompletion waits for a query to complete and returns the result
@@ -183,36 +204,41 @@ func (qes *QueryExecutionService) WaitForQueryCompletion(ctx context.Context, jo
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		default:
-			status, err := qes.GetQueryStatus(jobID)
+			execution, err := qes.distributedExecutor.GetQueryExecution(jobID)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get query status: %w", err)
+				return nil, fmt.Errorf("failed to get query execution: %w", err)
 			}
 
-			switch status.Status {
-			case "COMPLETED":
+			switch execution.Status {
+			case QueryStatusCompleted:
 				// Query completed successfully
 				result := &QueryResult{
-					JobID:   jobID,
-					Success: true,
-					// TODO: Collect actual results from object storage
-					ResultPath: fmt.Sprintf("s3://lake/results/%s/", jobID),
+					JobID:      jobID,
+					Success:    true,
+					ResultPath: execution.ResultLocation,
 				}
 
-				// Clean up the query from active tracking
-				qes.taskScheduler.RemoveQuery(jobID)
+				// Get metrics
+				if metrics, err := qes.distributedExecutor.GetQueryMetrics(jobID); err == nil {
+					result.Metrics = &QueryMetrics{
+						DurationMs:     metrics.DurationMs,
+						TotalTasks:     metrics.TotalTasks,
+						FailedTasks:    metrics.FailedTasks,
+						RetriedTasks:   0, // TODO: Track retries
+						BytesProcessed: 0, // TODO: Aggregate from task metrics
+						RowsProcessed:  0, // TODO: Aggregate from task metrics
+					}
+				}
 
 				return result, nil
 
-			case "FAILED":
+			case QueryStatusFailed:
 				// Query failed
 				result := &QueryResult{
 					JobID:   jobID,
 					Success: false,
-					Error:   "Query execution failed",
+					Error:   execution.Error,
 				}
-
-				// Clean up the query from active tracking
-				qes.taskScheduler.RemoveQuery(jobID)
 
 				return result, nil
 

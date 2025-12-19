@@ -96,6 +96,7 @@ type SimpleQuery struct {
 	GroupBy    []string
 	Aggregates []Aggregate
 	Projection []string
+	Version    uint64 // 0 means latest version
 }
 
 // Aggregate represents an aggregation operation
@@ -107,7 +108,7 @@ type Aggregate struct {
 
 // PlanQuery creates a stage-based execution plan for the given query
 func (qp *QueryPlanner) PlanQuery(query *SimpleQuery) (*QueryPlan, error) {
-	return qp.PlanQueryWithVersion(query, 0) // Use latest version by default
+	return qp.PlanQueryWithVersion(query, query.Version) // Use query's specified version
 }
 
 // PlanQueryWithVersion creates a stage-based execution plan for the given query at a specific version
