@@ -151,7 +151,7 @@ func (dqe *DistributedQueryExecutor) executeQueryAsync(ctx context.Context, exec
 	log.Printf("Starting async execution of query %s with %d stages", execution.JobID, len(execution.Plan.Stages))
 
 	// Execute stages in order
-	for stageID, stage := range execution.Plan.Stages {
+	for stageID := range execution.Plan.Stages {
 		log.Printf("Executing stage %d for query %s", stageID, execution.JobID)
 
 		// Wait for dependencies
@@ -340,8 +340,6 @@ func (dqe *DistributedQueryExecutor) collectStageOutputs(jobID string, stageID i
 		if task.Status == TaskCompleted && task.Spec != nil {
 			// For shuffle operations, collect all partition outputs
 			if task.Spec.Operation == SHUFFLE {
-				// Read SUCCESS manifest to get actual outputs
-				successPath := fmt.Sprintf("%s/SUCCESS.json", strings.TrimSuffix(task.Spec.OutputPath, "/"))
 				// TODO: Read and parse SUCCESS manifest
 				// For now, construct expected outputs
 				if task.Spec.NumPartitions > 0 {

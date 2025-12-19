@@ -127,14 +127,13 @@ func (tl *TransactionLog) ListLogEntries(ctx context.Context, tableName string) 
 	prefix := tl.pathBuilder.TransactionLogDir(tableName)
 
 	// List objects with the prefix
-	objectCh := tl.client.ListObjects(ctx, prefix)
+	objects, err := tl.client.ListObjects(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list objects: %w", err)
+	}
 
 	var versions []uint64
-	for object := range objectCh {
-		if object.Err != nil {
-			return nil, fmt.Errorf("error listing objects: %w", object.Err)
-		}
-
+	for _, object := range objects {
 		// Parse the version from the object path
 		_, version, err := tl.pathBuilder.ParseTransactionLogPath(object.Key)
 		if err != nil {

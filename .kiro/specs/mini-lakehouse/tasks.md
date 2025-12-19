@@ -201,7 +201,9 @@
     - **Property 20: SUCCESS manifest authority**
     - **Validates: Requirements 5.4, 5.6**
 
-- [-] 8. Implement end-to-end query execution
+- [x] 8. Implement end-to-end query execution
+
+
 
 
 
@@ -237,7 +239,12 @@
 
 
 
-- [ ] 9. Checkpoint - Ensure all tests pass
+- [x] 9. Checkpoint - Ensure all tests pass
+
+
+
+
+
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 10. Implement fault tolerance mechanisms

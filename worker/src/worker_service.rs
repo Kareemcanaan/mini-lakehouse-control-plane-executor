@@ -8,6 +8,8 @@ use tracing::{error, info, warn};
 use crate::proto::worker::{
     worker_service_server::WorkerService, RunTaskRequest, RunTaskResponse, CancelTaskRequest,
     CancelTaskResponse, TaskSpec as ProtoTaskSpec, TaskOperation as ProtoTaskOperation,
+};
+use crate::proto::common::{
     TaskOutput as ProtoTaskOutput, TaskMetrics as ProtoTaskMetrics,
 };
 use crate::proto::coordinator::{
@@ -173,13 +175,13 @@ impl WorkerServiceImpl {
             let proto_result = ProtoTaskResult {
                 success: result.success,
                 error: result.error.unwrap_or_default(),
-                outputs: result.outputs.into_iter().map(|o| crate::proto::coordinator::TaskOutput {
+                outputs: result.outputs.into_iter().map(|o| crate::proto::common::TaskOutput {
                     partition: o.partition as u32,
                     path: o.path,
                     rows: o.rows,
                     size: o.size,
                 }).collect(),
-                metrics: Some(crate::proto::coordinator::TaskMetrics {
+                metrics: Some(crate::proto::common::TaskMetrics {
                     duration_ms: result.metrics.duration_ms,
                     rows_processed: result.metrics.rows_processed,
                     bytes_read: result.metrics.bytes_read,

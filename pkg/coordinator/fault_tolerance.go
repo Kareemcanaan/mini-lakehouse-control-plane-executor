@@ -270,16 +270,15 @@ func (ftm *FaultToleranceManager) GetSuccessfulTaskOutputs(ctx context.Context, 
 func (ftm *FaultToleranceManager) ListSuccessfulTasks(ctx context.Context, jobID string, stageID int) ([]int, error) {
 	// List all objects in the stage directory
 	prefix := fmt.Sprintf("shuffle/%s/stage_%d/", jobID, stageID)
-	objectCh := ftm.storageClient.ListObjects(ctx, prefix)
+	objects, err := ftm.storageClient.ListObjects(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list stage objects: %w", err)
+	}
 
 	var successfulTasks []int
 
 	// Look for SUCCESS.json files
-	for obj := range objectCh {
-		if obj.Err != nil {
-			return nil, fmt.Errorf("failed to list stage objects: %w", obj.Err)
-		}
-
+	for _, obj := range objects {
 		if strings.HasSuffix(obj.Key, "/SUCCESS.json") {
 			// Extract task ID from path: shuffle/job/stage_X/task_Y/SUCCESS.json
 			parts := strings.Split(obj.Key, "/")
@@ -303,14 +302,13 @@ func (ftm *FaultToleranceManager) ListSuccessfulTasks(ctx context.Context, jobID
 func (ftm *FaultToleranceManager) CleanupFailedAttempts(ctx context.Context, jobID string, stageID, taskID int, successfulAttempt int) error {
 	// List all objects for this task
 	prefix := fmt.Sprintf("shuffle/%s/stage_%d/task_%d/", jobID, stageID, taskID)
-	objectCh := ftm.storageClient.ListObjects(ctx, prefix)
+	objects, err := ftm.storageClient.ListObjects(ctx, prefix)
+	if err != nil {
+		return fmt.Errorf("failed to list task objects: %w", err)
+	}
 
 	// Delete objects from failed attempts
-	for obj := range objectCh {
-		if obj.Err != nil {
-			return fmt.Errorf("failed to list task objects: %w", obj.Err)
-		}
-
+	for _, obj := range objects {
 		// Check if this object is from a failed attempt
 		if strings.Contains(obj.Key, fmt.Sprintf("/attempt_%d/", successfulAttempt)) {
 			continue // Keep successful attempt
