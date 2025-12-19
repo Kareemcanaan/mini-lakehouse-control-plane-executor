@@ -18,9 +18,9 @@ proto: proto-go proto-rust
 # Generate Go protobuf code
 proto-go:
 	@echo "Generating Go protobuf code..."
-	@mkdir -p proto/gen/go
-	protoc --go_out=proto/gen/go --go_opt=paths=source_relative \
-		--go-grpc_out=proto/gen/go --go-grpc_opt=paths=source_relative \
+	@mkdir -p proto/gen
+	protoc --go_out=proto/gen --go_opt=paths=source_relative \
+		--go-grpc_out=proto/gen --go-grpc_opt=paths=source_relative \
 		proto/*.proto
 
 # Generate Rust protobuf code

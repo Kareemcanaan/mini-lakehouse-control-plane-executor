@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package common;
+
+option go_package = "./proto/gen";
+
+// Common types shared between coordinator and worker
+
+message TaskOutput {
+  uint32 partition = 1;
+  string path = 2;
+  uint64 rows = 3;
+  uint64 size = 4;
+}
+
+message TaskMetrics {
+  uint64 duration_ms = 1;
+  uint64 rows_processed = 2;
+  uint64 bytes_read = 3;
+  uint64 bytes_written = 4;
+}
+
+message Aggregate {
+  string function = 1;  // "sum", "count", "avg", "min", "max"
+  string column = 2;
+  string alias = 3;
+}

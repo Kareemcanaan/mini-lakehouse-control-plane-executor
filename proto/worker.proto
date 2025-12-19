@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package worker;
 
-option go_package = "mini-lakehouse/proto/worker";
+import "proto/common.proto";
+
+option go_package = "./proto/gen";
 
 // Worker service for task execution
 service WorkerService {
@@ -21,8 +23,8 @@ message RunTaskRequest {
 message RunTaskResponse {
   bool success = 1;
   string error = 2;
-  repeated TaskOutput outputs = 3;
-  TaskMetrics metrics = 4;
+  repeated common.TaskOutput outputs = 3;
+  common.TaskMetrics metrics = 4;
 }
 
 message CancelTaskRequest {
@@ -39,7 +41,7 @@ message TaskSpec {
   repeated string input_files = 2;
   string filter = 3;
   repeated string group_by = 4;
-  repeated Aggregate aggregates = 5;
+  repeated common.Aggregate aggregates = 5;
   uint32 num_partitions = 6;
   string output_path = 7;
   repeated string projection = 8;
@@ -54,22 +56,3 @@ enum TaskOperation {
   SHUFFLE = 5;
 }
 
-message Aggregate {
-  string function = 1;  // "sum", "count", "avg", "min", "max"
-  string column = 2;
-  string alias = 3;
-}
-
-message TaskOutput {
-  uint32 partition = 1;
-  string path = 2;
-  uint64 rows = 3;
-  uint64 size = 4;
-}
-
-message TaskMetrics {
-  uint64 duration_ms = 1;
-  uint64 rows_processed = 2;
-  uint64 bytes_read = 3;
-  uint64 bytes_written = 4;
-}

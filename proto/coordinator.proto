@@ -2,7 +2,9 @@ syntax = "proto3";
 
 package coordinator;
 
-option go_package = "mini-lakehouse/proto/coordinator";
+import "proto/common.proto";
+
+option go_package = "./proto/gen";
 
 // Coordinator service for worker registration and task reporting
 service CoordinatorService {
@@ -60,20 +62,6 @@ message WorkerStatus {
 message TaskResult {
   bool success = 1;
   string error = 2;
-  repeated TaskOutput outputs = 3;
-  TaskMetrics metrics = 4;
-}
-
-message TaskOutput {
-  uint32 partition = 1;
-  string path = 2;
-  uint64 rows = 3;
-  uint64 size = 4;
-}
-
-message TaskMetrics {
-  uint64 duration_ms = 1;
-  uint64 rows_processed = 2;
-  uint64 bytes_read = 3;
-  uint64 bytes_written = 4;
+  repeated common.TaskOutput outputs = 3;
+  common.TaskMetrics metrics = 4;
 }

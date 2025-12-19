@@ -92,13 +92,22 @@
 
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. Implement Parquet data operations (Rust)
-  - [ ] 5.1 Create Parquet file reader with filtering
+- [x] 5. Implement Parquet data operations (Rust)
+
+
+
+
+
+  - [x] 5.1 Create Parquet file reader with filtering
+
+
     - Implement columnar data reading with predicate pushdown
     - Add schema validation and type conversion
     - _Requirements: 1.1, 4.2_
 
-  - [ ] 5.2 Create Parquet file writer for data and shuffle outputs
+  - [x] 5.2 Create Parquet file writer for data and shuffle outputs
+
+
     - Implement efficient columnar data writing
     - Add partitioning support for shuffle operations
     - _Requirements: 1.1, 4.3_
@@ -109,18 +118,29 @@
 
 
 
-- [ ] 6. Implement worker task execution engine (Rust)
-  - [ ] 6.1 Create task execution framework
+- [x] 6. Implement worker task execution engine (Rust)
+
+
+
+
+
+  - [x] 6.1 Create task execution framework
+
+
     - Implement scan, filter, projection, and aggregation operations
     - Add GROUP BY support with count and sum aggregates
     - _Requirements: 4.2, 4.5_
 
-  - [ ] 6.2 Implement shuffle operations
+  - [x] 6.2 Implement shuffle operations
+
+
     - Create data partitioning for reduce stages
     - Add shuffle output writing with attempt isolation
     - _Requirements: 4.3, 5.3_
 
-  - [ ] 6.3 Create worker gRPC service
+  - [x] 6.3 Create worker gRPC service
+
+
     - Implement RunTask and CancelTask endpoints
     - Add heartbeat and task completion reporting
     - _Requirements: 5.1, 5.6_
@@ -131,23 +151,46 @@
 
 
 
-- [ ] 7. Implement coordinator service (Go)
-  - [ ] 7.1 Create query planning engine
+- [x] 7. Implement coordinator service (Go)
+
+
+
+
+
+
+
+
+
+
+  - [x] 7.1 Create query planning engine
+
+
+
+
+
+
+
     - Implement stage-based query plan generation
     - Add task creation and dependency management
     - _Requirements: 4.1_
 
-  - [ ] 7.2 Implement task scheduling and worker management
+  - [x] 7.2 Implement task scheduling and worker management
+
+
     - Create worker registration and heartbeat monitoring
     - Add task assignment with load balancing
     - _Requirements: 5.1, 5.2_
 
-  - [ ] 7.3 Add fault tolerance and retry logic
+  - [x] 7.3 Add fault tolerance and retry logic
+
+
     - Implement task failure detection and retry
     - Create SUCCESS manifest validation and writing
     - _Requirements: 5.2, 5.4, 5.6_
 
-  - [ ] 7.4 Create coordinator gRPC services
+  - [x] 7.4 Create coordinator gRPC services
+
+
     - Implement RegisterWorker, Heartbeat, ReportTaskComplete endpoints
     - Add query execution orchestration
     - _Requirements: 4.4_

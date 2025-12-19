@@ -1,13 +1,16 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Generate proto files for worker and coordinator services
     tonic_build::configure()
-        .out_dir("src/proto")
+        .build_server(true)
+        .build_client(true)
         .compile(
-            &[
-                "../proto/metadata.proto",
-                "../proto/coordinator.proto", 
-                "../proto/worker.proto"
-            ],
+            &["../proto/worker.proto", "../proto/coordinator.proto"],
             &["../proto"],
         )?;
+
+    println!("cargo:rerun-if-changed=../proto/metadata.proto");
+    println!("cargo:rerun-if-changed=../proto/coordinator.proto");
+    println!("cargo:rerun-if-changed=../proto/worker.proto");
+    
     Ok(())
 }

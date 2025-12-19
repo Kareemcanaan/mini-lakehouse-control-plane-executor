@@ -3,6 +3,14 @@ name = "worker"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "worker"
+path = "src/main.rs"
+
+[lib]
+name = "worker"
+path = "src/lib.rs"
+
 [dependencies]
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -18,8 +26,12 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
 prometheus = { workspace = true }
+thiserror = "1.0"
+arrow-ord = { workspace = true }
+arrow-select = { workspace = true }
 
 [dev-dependencies]
+tempfile = "3.8"
 proptest = { workspace = true }
 
 [build-dependencies]
