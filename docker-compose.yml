@@ -41,17 +41,24 @@ services:
     ports:
       - "8080:8080"
       - "8081:8081"  # Raft port
+      - "9092:9092"  # Metrics port
     environment:
       - RAFT_NODE_ID=1
       - RAFT_BIND_ADDR=0.0.0.0:8081
       - RAFT_PEERS=meta-1:8081,meta-2:8082,meta-3:8083
       - GRPC_BIND_ADDR=0.0.0.0:8080
+      - GRPC_PORT=8080
+      - DATA_DIR=/data
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=lake
+      - MINIO_USE_SSL=false
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
     depends_on:
       - minio-setup
+      - jaeger
     volumes:
       - meta1_data:/data
 
@@ -64,17 +71,24 @@ services:
     ports:
       - "8090:8080"
       - "8082:8082"  # Raft port
+      - "9093:9092"  # Metrics port
     environment:
       - RAFT_NODE_ID=2
       - RAFT_BIND_ADDR=0.0.0.0:8082
       - RAFT_PEERS=meta-1:8081,meta-2:8082,meta-3:8083
       - GRPC_BIND_ADDR=0.0.0.0:8080
+      - GRPC_PORT=8080
+      - DATA_DIR=/data
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=lake
+      - MINIO_USE_SSL=false
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
     depends_on:
       - minio-setup
+      - jaeger
     volumes:
       - meta2_data:/data
 
@@ -87,17 +101,24 @@ services:
     ports:
       - "8100:8080"
       - "8083:8083"  # Raft port
+      - "9094:9092"  # Metrics port
     environment:
       - RAFT_NODE_ID=3
       - RAFT_BIND_ADDR=0.0.0.0:8083
       - RAFT_PEERS=meta-1:8081,meta-2:8082,meta-3:8083
       - GRPC_BIND_ADDR=0.0.0.0:8080
+      - GRPC_PORT=8080
+      - DATA_DIR=/data
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=lake
+      - MINIO_USE_SSL=false
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
     depends_on:
       - minio-setup
+      - jaeger
     volumes:
       - meta3_data:/data
 
@@ -108,18 +129,26 @@ services:
       dockerfile: docker/Dockerfile.coordinator
     container_name: mini-lakehouse-coordinator
     ports:
-      - "8070:8070"
+      - "8070:8070"  # gRPC port
+      - "8081:8081"  # REST API port
+      - "9090:9090"  # Metrics port
     environment:
       - GRPC_BIND_ADDR=0.0.0.0:8070
+      - REST_BIND_ADDR=0.0.0.0:8081
+      - METRICS_BIND_ADDR=0.0.0.0:9090
       - METADATA_ENDPOINTS=meta-1:8080,meta-2:8080,meta-3:8080
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=lake
+      - MINIO_USE_SSL=false
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
     depends_on:
       - meta-1
       - meta-2
       - meta-3
+      - jaeger
 
   # Worker 1
   worker-1:
@@ -129,16 +158,22 @@ services:
     container_name: mini-lakehouse-worker-1
     ports:
       - "8060:8060"
+      - "9091:9091"  # Metrics port
     environment:
       - WORKER_ID=worker-1
+      - WORKER_ADDRESS=0.0.0.0:8060
       - GRPC_BIND_ADDR=0.0.0.0:8060
-      - COORDINATOR_ENDPOINT=coordinator:8070
+      - COORDINATOR_ENDPOINT=http://coordinator:8070
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=lake
+      - MINIO_USE_SSL=false
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
     depends_on:
       - coordinator
+      - jaeger
 
   # Worker 2
   worker-2:
@@ -148,16 +183,57 @@ services:
     container_name: mini-lakehouse-worker-2
     ports:
       - "8061:8060"
+      - "9095:9091"  # Metrics port
     environment:
       - WORKER_ID=worker-2
+      - WORKER_ADDRESS=0.0.0.0:8060
       - GRPC_BIND_ADDR=0.0.0.0:8060
-      - COORDINATOR_ENDPOINT=coordinator:8070
+      - COORDINATOR_ENDPOINT=http://coordinator:8070
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET=lake
+      - MINIO_USE_SSL=false
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
     depends_on:
       - coordinator
+      - jaeger
+
+  # Worker 3
+  worker-3:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    container_name: mini-lakehouse-worker-3
+    ports:
+      - "8062:8060"
+      - "9096:9091"  # Metrics port
+    environment:
+      - WORKER_ID=worker-3
+      - WORKER_ADDRESS=0.0.0.0:8060
+      - GRPC_BIND_ADDR=0.0.0.0:8060
+      - COORDINATOR_ENDPOINT=http://coordinator:8070
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET=lake
+      - MINIO_USE_SSL=false
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - LOG_LEVEL=info
+    depends_on:
+      - coordinator
+      - jaeger
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: mini-lakehouse-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector HTTP
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
 
   # Prometheus for metrics collection
   prometheus:
@@ -167,12 +243,14 @@ services:
       - "9090:9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./monitoring/lakehouse_alerts.yml:/etc/prometheus/lakehouse_alerts.yml
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
 
   # Grafana for dashboards
   grafana:
@@ -186,6 +264,8 @@ services:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
       - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
 
 volumes:
   minio_data:

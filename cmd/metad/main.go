@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
@@ -9,6 +10,9 @@ import (
 	"syscall"
 
 	"mini-lakehouse/pkg/metadata"
+	"mini-lakehouse/pkg/observability"
+
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -32,37 +36,63 @@ func main() {
 		log.Fatal("data-dir is required")
 	}
 
+	// Initialize observability
+	obsConfig := observability.DefaultConfig("mini-lakehouse-metadata")
+	obsConfig.Metrics.Port = 9092 // Different port for metadata service
+	obs, err := observability.New(obsConfig)
+	if err != nil {
+		log.Fatalf("Failed to initialize observability: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start observability services
+	if err := obs.Start(ctx); err != nil {
+		log.Fatalf("Failed to start observability: %v", err)
+	}
+	defer obs.Stop(context.Background())
+
 	// Parse peers
 	var peerList []string
 	if *peers != "" {
 		peerList = strings.Split(*peers, ",")
 	}
 
-	log.Printf("Starting metadata service with node-id=%s, bind-addr=%s, data-dir=%s", *nodeID, *bindAddr, *dataDir)
+	obs.Logger.WithRaft(*nodeID, false, 0, 0).Info("Starting metadata service",
+		zap.String("bind_addr", *bindAddr),
+		zap.String("data_dir", *dataDir))
 
-	// Create service
+	// Create service with observability
 	service := metadata.NewService(*nodeID, *bindAddr, *dataDir)
 
 	// Start Raft cluster
 	if err := service.Start(peerList); err != nil {
+		obs.Logger.WithError(err).Error("Failed to start Raft cluster")
 		log.Fatalf("Failed to start Raft cluster: %v", err)
 	}
 
 	// Start gRPC server in a goroutine
 	go func() {
-		log.Printf("Starting gRPC server on port %d", *grpcPort)
+		obs.Logger.Info("Starting gRPC server",
+			zap.Int("port", *grpcPort))
 		if err := service.StartGRPCServer(*grpcPort); err != nil {
+			obs.Logger.WithError(err).Error("Failed to start gRPC server")
 			log.Fatalf("Failed to start gRPC server: %v", err)
 		}
 	}()
+
+	obs.Logger.Info("Metadata service started successfully")
 
 	// Wait for interrupt signal
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
-	log.Println("Shutting down metadata service...")
+	obs.Logger.Info("Shutting down metadata service...")
 	if err := service.Stop(); err != nil {
+		obs.Logger.WithError(err).Error("Error during shutdown")
 		log.Printf("Error during shutdown: %v", err)
 	}
+	obs.Logger.Info("Metadata service stopped")
 }
