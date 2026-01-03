@@ -18,7 +18,7 @@ import (
 type RestAPI struct {
 	tableService   *TableService
 	queryService   *QueryExecutionService
-	metadataClient gen.MetadataServiceClient
+	metadataClient MetadataClient
 	port           int
 	server         *http.Server
 }
@@ -27,7 +27,7 @@ type RestAPI struct {
 func NewRestAPI(
 	tableService *TableService,
 	queryService *QueryExecutionService,
-	metadataClient gen.MetadataServiceClient,
+	metadataClient MetadataClient,
 	port int,
 ) *RestAPI {
 	return &RestAPI{
@@ -39,7 +39,7 @@ func NewRestAPI(
 }
 
 // Start starts the REST API server
-func (api *RestAPI) Start() error {
+func (api *RestAPI) Start(compactionAPI *CompactionAPI) error {
 	router := mux.NewRouter()
 
 	// Table operations
@@ -53,6 +53,11 @@ func (api *RestAPI) Start() error {
 	router.HandleFunc("/queries", api.executeQuery).Methods("POST")
 	router.HandleFunc("/queries/{jobId}", api.getQueryStatus).Methods("GET")
 	router.HandleFunc("/queries/{jobId}/results", api.getQueryResults).Methods("GET")
+
+	// Compaction operations (if compactionAPI is provided)
+	if compactionAPI != nil {
+		api.AddCompactionRoutes(router, compactionAPI)
+	}
 
 	// Health check
 	router.HandleFunc("/health", api.healthCheck).Methods("GET")
@@ -429,5 +434,178 @@ func (api *RestAPI) healthCheck(w http.ResponseWriter, r *http.Request) {
 		"status":    "healthy",
 		"timestamp": time.Now().UTC(),
 		"service":   "mini-lakehouse-coordinator",
+	})
+}
+
+// CompactionAPI provides HTTP endpoints for compaction operations
+type CompactionAPI struct {
+	compactionCoordinator *CompactionCoordinator
+}
+
+// NewCompactionAPI creates a new compaction API
+func NewCompactionAPI(compactionCoordinator *CompactionCoordinator) *CompactionAPI {
+	return &CompactionAPI{
+		compactionCoordinator: compactionCoordinator,
+	}
+}
+
+// AddCompactionRoutes adds compaction routes to the router
+func (api *RestAPI) AddCompactionRoutes(router *mux.Router, compactionAPI *CompactionAPI) {
+	// Compaction operations
+	router.HandleFunc("/tables/{tableName}/compaction", compactionAPI.triggerCompaction).Methods("POST")
+	router.HandleFunc("/tables/{tableName}/compaction/status", compactionAPI.getCompactionStatus).Methods("GET")
+	router.HandleFunc("/tables/{tableName}/compaction/metrics", compactionAPI.getCompactionMetrics).Methods("GET")
+	router.HandleFunc("/compaction/active", compactionAPI.getActiveCompactions).Methods("GET")
+	router.HandleFunc("/tables/{tableName}/compaction", compactionAPI.cancelCompaction).Methods("DELETE")
+}
+
+// CompactionTriggerRequest represents the JSON request for triggering compaction
+type CompactionTriggerRequest struct {
+	Force bool `json:"force,omitempty"` // Force compaction even if not needed
+}
+
+// triggerCompaction handles POST /tables/{tableName}/compaction
+func (capi *CompactionAPI) triggerCompaction(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	tableName := vars["tableName"]
+
+	var req CompactionTriggerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Allow empty body for simple trigger
+		req = CompactionTriggerRequest{}
+	}
+
+	ctx := context.Background()
+
+	// Validate compaction safety first
+	if err := capi.compactionCoordinator.ValidateCompactionSafety(ctx, tableName); err != nil {
+		http.Error(w, fmt.Sprintf("Compaction validation failed: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Execute compaction
+	result, err := capi.compactionCoordinator.SafeExecuteCompaction(ctx, tableName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Compaction execution failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if !result.Success {
+		// Return the error but with 200 status since the API call succeeded
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   result.Error,
+			"txn_id":  result.TxnID,
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":       true,
+		"txn_id":        result.TxnID,
+		"new_version":   result.NewVersion,
+		"input_files":   result.InputFiles,
+		"output_files":  len(result.OutputFiles),
+		"bytes_read":    result.BytesRead,
+		"bytes_written": result.BytesWritten,
+		"duration_ms":   result.Duration.Milliseconds(),
+		"message":       fmt.Sprintf("Compaction completed for table %s", tableName),
+	})
+}
+
+// getCompactionStatus handles GET /tables/{tableName}/compaction/status
+func (capi *CompactionAPI) getCompactionStatus(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	tableName := vars["tableName"]
+
+	isRunning := capi.compactionCoordinator.IsCompactionRunning(tableName)
+
+	response := map[string]interface{}{
+		"table_name": tableName,
+		"running":    isRunning,
+	}
+
+	if isRunning {
+		activeCompactions := capi.compactionCoordinator.GetActiveCompactions()
+		if compaction, exists := activeCompactions[tableName]; exists {
+			response["txn_id"] = compaction.TxnID
+			response["base_version"] = compaction.BaseVersion
+			response["start_time"] = compaction.StartTime
+			response["status"] = compaction.Status.String()
+			response["duration_ms"] = time.Since(compaction.StartTime).Milliseconds()
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// getCompactionMetrics handles GET /tables/{tableName}/compaction/metrics
+func (capi *CompactionAPI) getCompactionMetrics(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	tableName := vars["tableName"]
+
+	ctx := context.Background()
+	metrics, err := capi.compactionCoordinator.compactionService.GetCompactionMetrics(ctx, tableName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get compaction metrics: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"table_name":              tableName,
+		"version":                 metrics.Version,
+		"total_files":             metrics.TotalFiles,
+		"small_files":             metrics.SmallFiles,
+		"compaction_needed":       metrics.CompactionNeeded,
+		"total_size_bytes":        metrics.TotalSize,
+		"small_files_size_bytes":  metrics.SmallFilesSize,
+		"average_small_file_size": metrics.AverageSmallFileSize,
+		"potential_savings_bytes": metrics.PotentialSavings,
+		"timestamp":               metrics.Timestamp,
+	})
+}
+
+// getActiveCompactions handles GET /compaction/active
+func (capi *CompactionAPI) getActiveCompactions(w http.ResponseWriter, r *http.Request) {
+	activeCompactions := capi.compactionCoordinator.GetActiveCompactions()
+
+	compactions := make([]map[string]interface{}, 0, len(activeCompactions))
+	for _, compaction := range activeCompactions {
+		compactions = append(compactions, map[string]interface{}{
+			"table_name":   compaction.TableName,
+			"txn_id":       compaction.TxnID,
+			"base_version": compaction.BaseVersion,
+			"start_time":   compaction.StartTime,
+			"status":       compaction.Status.String(),
+			"duration_ms":  time.Since(compaction.StartTime).Milliseconds(),
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"active_compactions": compactions,
+		"count":              len(compactions),
+	})
+}
+
+// cancelCompaction handles DELETE /tables/{tableName}/compaction
+func (capi *CompactionAPI) cancelCompaction(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	tableName := vars["tableName"]
+
+	err := capi.compactionCoordinator.CancelCompaction(tableName)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to cancel compaction: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Compaction cancelled for table %s", tableName),
 	})
 }
