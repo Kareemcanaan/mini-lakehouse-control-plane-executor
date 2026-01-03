@@ -19,6 +19,10 @@ type FaultToleranceManager struct {
 	taskScheduler *TaskScheduler
 	workerManager *WorkerManager
 
+	// Enhanced failure detection and recovery
+	failureDetector     *WorkerFailureDetector
+	reassignmentManager *TaskReassignmentManager
+
 	// Configuration
 	taskTimeout      time.Duration
 	heartbeatTimeout time.Duration
@@ -27,7 +31,7 @@ type FaultToleranceManager struct {
 
 // NewFaultToleranceManager creates a new fault tolerance manager
 func NewFaultToleranceManager(storageClient *storage.Client, taskScheduler *TaskScheduler, workerManager *WorkerManager) *FaultToleranceManager {
-	return &FaultToleranceManager{
+	ftm := &FaultToleranceManager{
 		storageClient:    storageClient,
 		taskScheduler:    taskScheduler,
 		workerManager:    workerManager,
@@ -35,6 +39,12 @@ func NewFaultToleranceManager(storageClient *storage.Client, taskScheduler *Task
 		heartbeatTimeout: 30 * time.Second,
 		maxRetries:       3,
 	}
+
+	// Initialize enhanced failure detection and recovery
+	ftm.failureDetector = NewWorkerFailureDetector(workerManager, taskScheduler)
+	ftm.reassignmentManager = NewTaskReassignmentManager(workerManager, taskScheduler, ftm.failureDetector, ftm)
+
+	return ftm
 }
 
 // SuccessManifest represents the SUCCESS manifest for a completed task
@@ -64,12 +74,19 @@ type TaskMetricsInfo struct {
 
 // StartFaultDetection starts background fault detection and recovery
 func (ftm *FaultToleranceManager) StartFaultDetection(ctx context.Context) {
+	// Start enhanced failure detection
+	ftm.failureDetector.Start()
+	ftm.reassignmentManager.Start()
+
+	// Start legacy fault detection loop for compatibility
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			ftm.failureDetector.Stop()
+			ftm.reassignmentManager.Stop()
 			return
 		case <-ticker.C:
 			ftm.detectAndHandleFaults()
@@ -412,6 +429,31 @@ func (ftm *FaultToleranceManager) GetFailureStatistics(plan *QueryPlan) FailureS
 	}
 
 	return stats
+}
+
+// GetWorkerHealth returns health information for a worker
+func (ftm *FaultToleranceManager) GetWorkerHealth(workerID string) (*WorkerHealthMetrics, bool) {
+	return ftm.failureDetector.GetWorkerHealth(workerID)
+}
+
+// GetReassignmentStats returns statistics about task reassignments
+func (ftm *FaultToleranceManager) GetReassignmentStats() ReassignmentStats {
+	return ftm.reassignmentManager.GetReassignmentStats()
+}
+
+// GetFailureHistory returns recent worker failure events
+func (ftm *FaultToleranceManager) GetFailureHistory(limit int) []WorkerFailureEvent {
+	return ftm.failureDetector.GetFailureHistory(limit)
+}
+
+// IsWorkerHealthy returns true if a worker is considered healthy
+func (ftm *FaultToleranceManager) IsWorkerHealthy(workerID string) bool {
+	return ftm.failureDetector.IsWorkerHealthy(workerID)
+}
+
+// GetHealthyWorkerCount returns the number of healthy workers
+func (ftm *FaultToleranceManager) GetHealthyWorkerCount() int {
+	return ftm.failureDetector.GetHealthyWorkerCount()
 }
 
 // FailureStats represents statistics about task failures

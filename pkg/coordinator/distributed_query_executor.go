@@ -7,15 +7,13 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"mini-lakehouse/proto/gen"
 )
 
 // DistributedQueryExecutor handles multi-stage query execution with shuffle
 type DistributedQueryExecutor struct {
 	taskScheduler   *TaskScheduler
 	queryPlanner    *QueryPlanner
-	metadataClient  gen.MetadataServiceClient
+	metadataClient  MetadataClient
 	faultTolerance  *FaultToleranceManager
 	snapshotManager *SnapshotIsolationManager
 
@@ -55,7 +53,7 @@ const (
 func NewDistributedQueryExecutor(
 	taskScheduler *TaskScheduler,
 	queryPlanner *QueryPlanner,
-	metadataClient gen.MetadataServiceClient,
+	metadataClient MetadataClient,
 	faultTolerance *FaultToleranceManager,
 ) *DistributedQueryExecutor {
 	snapshotManager := NewSnapshotIsolationManager(metadataClient)

@@ -74,7 +74,7 @@ const (
 
 // QueryPlanner handles the creation of query execution plans
 type QueryPlanner struct {
-	metadataClient gen.MetadataServiceClient
+	metadataClient MetadataClient
 }
 
 // NewQueryPlanner creates a new query planner instance
@@ -83,7 +83,7 @@ func NewQueryPlanner() *QueryPlanner {
 }
 
 // NewQueryPlannerWithMetadata creates a new query planner instance with metadata service client
-func NewQueryPlannerWithMetadata(metadataClient gen.MetadataServiceClient) *QueryPlanner {
+func NewQueryPlannerWithMetadata(metadataClient MetadataClient) *QueryPlanner {
 	return &QueryPlanner{
 		metadataClient: metadataClient,
 	}

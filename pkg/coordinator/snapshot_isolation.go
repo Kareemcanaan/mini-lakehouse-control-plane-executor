@@ -12,7 +12,7 @@ import (
 
 // SnapshotIsolationManager manages snapshot isolation for reads
 type SnapshotIsolationManager struct {
-	metadataClient gen.MetadataServiceClient
+	metadataClient MetadataClient
 
 	// Snapshot cache to avoid repeated metadata calls
 	mu            sync.RWMutex
@@ -45,7 +45,7 @@ type SnapshotReadResponse struct {
 }
 
 // NewSnapshotIsolationManager creates a new snapshot isolation manager
-func NewSnapshotIsolationManager(metadataClient gen.MetadataServiceClient) *SnapshotIsolationManager {
+func NewSnapshotIsolationManager(metadataClient MetadataClient) *SnapshotIsolationManager {
 	return &SnapshotIsolationManager{
 		metadataClient: metadataClient,
 		snapshotCache:  make(map[string]*CachedSnapshot),

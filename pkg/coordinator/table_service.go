@@ -15,25 +15,32 @@ import (
 
 // TableService handles table creation and data insertion workflows
 type TableService struct {
-	metadataClient gen.MetadataServiceClient
-	storageClient  *storage.Client
-	taskScheduler  *TaskScheduler
-	queryPlanner   *QueryPlanner
+	metadataClient     MetadataClient
+	storageClient      *storage.Client
+	taskScheduler      *TaskScheduler
+	queryPlanner       *QueryPlanner
+	transactionManager *TransactionManager
 }
 
 // NewTableService creates a new table service
 func NewTableService(
-	metadataClient gen.MetadataServiceClient,
+	metadataClient MetadataClient,
 	storageClient *storage.Client,
 	taskScheduler *TaskScheduler,
 	queryPlanner *QueryPlanner,
 ) *TableService {
-	return &TableService{
-		metadataClient: metadataClient,
-		storageClient:  storageClient,
-		taskScheduler:  taskScheduler,
-		queryPlanner:   queryPlanner,
+	ts := &TableService{
+		metadataClient:     metadataClient,
+		storageClient:      storageClient,
+		taskScheduler:      taskScheduler,
+		queryPlanner:       queryPlanner,
+		transactionManager: NewTransactionManager(),
 	}
+
+	// Start transaction cleanup routine
+	ts.transactionManager.StartCleanupRoutine()
+
+	return ts
 }
 
 // CreateTableRequest represents a table creation request
@@ -114,13 +121,7 @@ func (ts *TableService) CreateTable(ctx context.Context, req *CreateTableRequest
 func (ts *TableService) InsertData(ctx context.Context, req *InsertDataRequest) (*InsertDataResponse, error) {
 	log.Printf("Inserting data into table %s from %s", req.TableName, req.DataPath)
 
-	// Generate transaction ID if not provided
-	txnID := req.TxnID
-	if txnID == "" {
-		txnID = generateTxnID()
-	}
-
-	// Get current table version
+	// Get current table version first
 	latestResp, err := ts.metadataClient.GetLatestVersion(ctx, &gen.GetLatestVersionRequest{
 		TableName: req.TableName,
 	})
@@ -128,18 +129,45 @@ func (ts *TableService) InsertData(ctx context.Context, req *InsertDataRequest) 
 		return &InsertDataResponse{
 			Success: false,
 			Error:   fmt.Sprintf("failed to get latest version: %v", err),
-			TxnID:   txnID,
 		}, nil
 	}
 	if latestResp.Error != "" {
 		return &InsertDataResponse{
 			Success: false,
 			Error:   latestResp.Error,
-			TxnID:   txnID,
 		}, nil
 	}
 
 	baseVersion := latestResp.Version
+
+	// Generate transaction ID if not provided and start transaction
+	txnID := req.TxnID
+	if txnID == "" {
+		txnID = ts.transactionManager.StartTransaction(req.TableName, baseVersion)
+	} else {
+		// If transaction ID is provided, check if it already exists (idempotency)
+		if txnInfo, result, exists := ts.transactionManager.GetTransactionStatus(txnID); exists {
+			if result != nil && result.Success {
+				// Transaction already completed successfully
+				return &InsertDataResponse{
+					Success:    true,
+					NewVersion: result.NewVersion,
+					TxnID:      txnID,
+					JobID:      "", // No job needed for completed transaction
+				}, nil
+			} else if txnInfo != nil && txnInfo.Status == TxnInProgress {
+				// Transaction is still in progress, return error
+				return &InsertDataResponse{
+					Success: false,
+					Error:   "transaction is already in progress",
+					TxnID:   txnID,
+				}, nil
+			}
+		}
+		// Start new transaction with provided ID (this will fail if ID already exists)
+		// For now, we'll generate a new ID to avoid conflicts
+		txnID = ts.transactionManager.StartTransaction(req.TableName, baseVersion)
+	}
 
 	// Create insertion job
 	jobID := generateJobID()
@@ -399,16 +427,15 @@ func (ts *TableService) commitInsertion(ctx context.Context, tableName string, b
 		fileAdds = append(fileAdds, fileAdd)
 	}
 
-	// Commit the transaction
-	commitResp, err := ts.metadataClient.Commit(ctx, &gen.CommitRequest{
-		TableName:   tableName,
-		BaseVersion: baseVersion,
-		TxnId:       txnID,
-		Adds:        fileAdds,
-		Removes:     []*gen.FileRemove{}, // No removes for insertion
-	})
+	// Commit the transaction using transaction manager for retry logic
+	commitResp, err := ts.transactionManager.CommitTransaction(
+		ts.metadataClient,
+		txnID,
+		fileAdds,
+		[]*gen.FileRemove{}, // No removes for insertion
+	)
 	if err != nil {
-		return 0, fmt.Errorf("metadata service error: %w", err)
+		return 0, fmt.Errorf("transaction commit failed: %w", err)
 	}
 
 	if commitResp.Error != "" {
