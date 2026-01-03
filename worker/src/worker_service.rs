@@ -53,6 +53,13 @@ impl WorkerServiceImpl {
         }
     }
 
+    /// Create a new worker service with metrics
+    pub fn new_with_metrics(worker_id: String, _metrics: Arc<crate::observability::WorkerMetrics>) -> Self {
+        // For now, just use the regular constructor
+        // TODO: Integrate metrics into the worker service
+        Self::new(worker_id)
+    }
+
     /// Register with coordinator
     pub async fn register_with_coordinator(
         &mut self,

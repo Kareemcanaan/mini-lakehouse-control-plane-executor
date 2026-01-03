@@ -24,11 +24,15 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 opentelemetry = { workspace = true }
+opentelemetry-jaeger = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 prometheus = { workspace = true }
 thiserror = "1.0"
 arrow-ord = { workspace = true }
 arrow-select = { workspace = true }
+warp = "0.3"
 
 [dev-dependencies]
 tempfile = "3.8"
