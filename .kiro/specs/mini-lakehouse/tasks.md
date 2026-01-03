@@ -247,18 +247,18 @@
 
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 10. Implement fault tolerance mechanisms
-  - [ ] 10.1 Add leader election handling in coordinator
+- [x] 10. Implement fault tolerance mechanisms
+  - [x] 10.1 Add leader election handling in coordinator
     - Implement metadata service leader discovery
     - Add commit retry logic during leader changes
     - _Requirements: 6.1, 6.2_
 
-  - [ ] 10.2 Implement worker failure detection and recovery
+  - [x] 10.2 Implement worker failure detection and recovery
     - Create heartbeat timeout detection
     - Add task reassignment to healthy workers
     - _Requirements: 5.1, 5.2_
 
-  - [ ] 10.3 Add duplicate request handling
+  - [x] 10.3 Add duplicate request handling
     - Implement transaction ID-based deduplication
     - Ensure state consistency across retries
     - _Requirements: 6.3_
@@ -269,48 +269,53 @@
 
 
 
-- [ ]* 11. Implement compaction operations (v2 - optional)
-  - [ ] 11.1 Create compaction candidate identification
+- [x] 11. Implement compaction operations (v2 - optional)
+
+  - [x] 11.1 Create compaction candidate identification
+
     - Implement file size analysis and threshold checking
     - Add compaction planning logic
     - _Requirements: 7.1_
 
-  - [ ] 11.2 Implement compaction execution
+  - [x] 11.2 Implement compaction execution
+
     - Create multi-file reading and consolidation
     - Add atomic commit with file adds/removes
     - _Requirements: 7.2, 7.3_
 
-  - [ ] 11.3 Add compaction safety with concurrent operations
+  - [x] 11.3 Add compaction safety with concurrent operations
+
     - Implement version validation for compaction commits
     - Ensure transaction safety during compaction
     - _Requirements: 7.4, 7.6_
 
-  - [ ]* 11.4 Write property test for query result preservation
+  - [x] 11.4 Write property test for query result preservation
+
     - **Property 30: Query result preservation**
     - **Validates: Requirements 7.5**
 
 
 
-- [ ] 12. Implement observability and monitoring
-  - [ ] 12.1 Add Prometheus metrics collection
+- [x] 12. Implement observability and monitoring
+  - [x] 12.1 Add Prometheus metrics collection
     - Implement task duration, failure rates, and throughput metrics
     - Add Raft leader status and apply latency tracking
     - _Requirements: 8.1, 8.4_
 
-  - [ ] 12.2 Implement OpenTelemetry distributed tracing
+  - [x] 12.2 Implement OpenTelemetry distributed tracing
     - Create job, stage, and task span hierarchy
     - Add trace context propagation across services
     - _Requirements: 8.2_
 
-  - [ ] 12.3 Add structured logging
+  - [x] 12.3 Add structured logging
     - Implement structured logs with job IDs, task IDs, and error codes
     - Add object store operation metrics
     - _Requirements: 8.3, 8.5_
 
 
 
-- [ ] 13. Create deployment and testing infrastructure
-  - [ ] 13.1 Complete Docker Compose configuration
+- [-] 13. Create deployment and testing infrastructure
+  - [-] 13.1 Complete Docker Compose configuration
     - Add all service definitions with proper networking
     - Configure environment variables and service discovery
     - _Requirements: 9.1, 9.2_
