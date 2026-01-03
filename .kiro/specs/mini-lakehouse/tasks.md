@@ -344,5 +344,5 @@
     - Ensure commit succeeds with new leader
     - _Requirements: 10.5, 6.1, 6.2, 6.3_
 
-- [ ] 14. Final checkpoint - Ensure all tests pass
+- [x] 14. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
