@@ -314,31 +314,31 @@
 
 
 
-- [-] 13. Create deployment and testing infrastructure
+- [x] 13. Create deployment and testing infrastructure
   - [x] 13.1 Complete Docker Compose configuration
     - Add all service definitions with proper networking
     - Configure environment variables and service discovery
     - _Requirements: 9.1, 9.2_
 
-  - [-] 13.2 Create demonstration workflow
+  - [x] 13.2 Create demonstration workflow
     - Implement complete table creation, insertion, and querying demo
     - Add fault tolerance demonstration scripts
     - _Requirements: 9.3, 9.4_
 
 
 
-  - [ ] 13.3 Write "golden query" end-to-end integration test
+  - [x] 13.3 Write "golden query" end-to-end integration test
     - Create table → insert data → execute GROUP BY query → verify exact expected output
     - Test complete workflow with deterministic data and results
     - _Requirements: 9.3, 10.2, 4.4, 4.5_
 
-  - [ ] 13.4 Write chaos test for worker failure during shuffle
+  - [x] 13.4 Write chaos test for worker failure during shuffle
     - Kill worker during map/shuffle stage execution
     - Verify task retry and SUCCESS manifest behavior
     - Ensure query completes with correct results
     - _Requirements: 10.4, 5.1, 5.2, 5.4_
 
-  - [ ] 13.5 Write chaos test for leader failure during commit
+  - [x] 13.5 Write chaos test for leader failure during commit
     - Kill metadata service leader during transaction commit
     - Verify exactly-once semantics via transaction ID
     - Ensure commit succeeds with new leader
