@@ -315,12 +315,12 @@
 
 
 - [-] 13. Create deployment and testing infrastructure
-  - [-] 13.1 Complete Docker Compose configuration
+  - [x] 13.1 Complete Docker Compose configuration
     - Add all service definitions with proper networking
     - Configure environment variables and service discovery
     - _Requirements: 9.1, 9.2_
 
-  - [ ] 13.2 Create demonstration workflow
+  - [-] 13.2 Create demonstration workflow
     - Implement complete table creation, insertion, and querying demo
     - Add fault tolerance demonstration scripts
     - _Requirements: 9.3, 9.4_
