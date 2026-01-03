@@ -3,26 +3,39 @@ global:
   evaluation_interval: 15s
 
 scrape_configs:
+  # Coordinator service metrics
   - job_name: 'coordinator'
     static_configs:
-      - targets: ['coordinator:8070']
+      - targets: ['coordinator:9090']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: 5s
 
+  # Metadata service metrics
   - job_name: 'metadata-service'
     static_configs:
-      - targets: ['meta-1:8080', 'meta-2:8080', 'meta-3:8080']
+      - targets: ['meta-1:9092', 'meta-2:9092', 'meta-3:9092']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: 5s
 
+  # Worker service metrics
   - job_name: 'workers'
     static_configs:
-      - targets: ['worker-1:8060', 'worker-2:8060']
+      - targets: ['worker-1:9091', 'worker-2:9091', 'worker-3:9091']
     metrics_path: '/metrics'
-    scrape_interval: 10s
+    scrape_interval: 5s
 
+  # MinIO object store metrics
   - job_name: 'minio'
     static_configs:
       - targets: ['minio:9000']
     metrics_path: '/minio/v2/metrics/cluster'
     scrape_interval: 30s
+
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+# Alerting rules
+rule_files:
+  - "lakehouse_alerts.yml"

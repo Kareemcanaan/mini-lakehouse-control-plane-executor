@@ -1,0 +1,131 @@
+groups:
+  - name: lakehouse.rules
+    rules:
+      # Critical Alerts
+      - alert: NoRaftLeader
+        expr: sum(lakehouse_metadata_leader_status) == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "No Raft leader elected"
+          description: "The metadata service has no leader for more than 30 seconds"
+
+      - alert: WorkerDown
+        expr: up{job="workers"} == 0
+        for: 60s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Worker {{ $labels.instance }} is down"
+          description: "Worker {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: CoordinatorDown
+        expr: up{job="coordinator"} == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Coordinator is down"
+          description: "The coordinator service has been down for more than 30 seconds"
+
+      - alert: HighCommitFailureRate
+        expr: rate(lakehouse_commit_failures_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High commit failure rate"
+          description: "Commit failure rate is {{ $value }} failures/sec for more than 2 minutes"
+
+      # Warning Alerts
+      - alert: HighQueryLatency
+        expr: histogram_quantile(0.95, rate(lakehouse_query_duration_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High query latency"
+          description: "95th percentile query latency is {{ $value }}s for more than 5 minutes"
+
+      - alert: HighTaskRetryRate
+        expr: rate(lakehouse_task_retries_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High task retry rate"
+          description: "Task retry rate is {{ $value }} retries/sec for more than 5 minutes"
+
+      - alert: WorkerHeartbeatMissing
+        expr: time() - lakehouse_worker_heartbeat_last_seen > 120
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Worker {{ $labels.worker_id }} heartbeat missing"
+          description: "Worker {{ $labels.worker_id }} hasn't sent a heartbeat for more than 2 minutes"
+
+      - alert: HighObjectStoreLatency
+        expr: histogram_quantile(0.95, rate(lakehouse_object_store_latency_seconds_bucket[5m])) > 5.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High object store latency"
+          description: "95th percentile object store latency is {{ $value }}s for more than 5 minutes"
+
+      - alert: LowActiveWorkers
+        expr: lakehouse_workers_active < 2
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low number of active workers"
+          description: "Only {{ $value }} workers are active, which may impact performance"
+
+      # Info Alerts
+      - alert: RaftLeaderElection
+        expr: increase(lakehouse_raft_leader_elections_total[1m]) > 0
+        for: 0s
+        labels:
+          severity: info
+        annotations:
+          summary: "Raft leader election occurred"
+          description: "A new Raft leader was elected on node {{ $labels.node_id }}"
+
+      - alert: CompactionRunning
+        expr: lakehouse_compactions_total > 0
+        for: 0s
+        labels:
+          severity: info
+        annotations:
+          summary: "Compaction in progress"
+          description: "Compaction is running on table {{ $labels.table_name }}"
+
+  - name: lakehouse.recording
+    rules:
+      # Recording rules for commonly used metrics
+      - record: lakehouse:query_rate_5m
+        expr: rate(lakehouse_queries_total[5m])
+
+      - record: lakehouse:task_completion_rate_5m
+        expr: rate(lakehouse_tasks_completed_total[5m])
+
+      - record: lakehouse:commit_rate_5m
+        expr: rate(lakehouse_commits_total[5m])
+
+      - record: lakehouse:object_store_throughput_5m
+        expr: rate(lakehouse_object_store_bytes_read_total[5m]) + rate(lakehouse_object_store_bytes_written_total[5m])
+
+      - record: lakehouse:query_latency_p95_5m
+        expr: histogram_quantile(0.95, rate(lakehouse_query_duration_seconds_bucket[5m]))
+
+      - record: lakehouse:query_latency_p50_5m
+        expr: histogram_quantile(0.50, rate(lakehouse_query_duration_seconds_bucket[5m]))
+
+      - record: lakehouse:task_failure_rate_5m
+        expr: rate(lakehouse_task_failures_total[5m])
+
+      - record: lakehouse:commit_failure_rate_5m
+        expr: rate(lakehouse_commit_failures_total[5m])

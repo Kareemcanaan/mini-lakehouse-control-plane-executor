@@ -1,0 +1,188 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Mini Lakehouse Dashboard",
+    "tags": ["lakehouse", "distributed-systems"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Query Performance",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "rate(lakehouse_queries_total[5m])",
+            "legendFormat": "Queries/sec"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "reqps"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Query Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(lakehouse_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(lakehouse_query_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile"
+          }
+        ],
+        "yAxes": [
+          {
+            "unit": "s"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Task Execution Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(lakehouse_tasks_completed_total[5m])",
+            "legendFormat": "{{task_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Active Workers",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "lakehouse_workers_active",
+            "legendFormat": "Active Workers"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 5,
+        "title": "Raft Leader Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "lakehouse_metadata_leader_status",
+            "legendFormat": "{{node_id}}"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "0": {"text": "Follower"},
+                  "1": {"text": "Leader"}
+                },
+                "type": "value"
+              }
+            ]
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Object Store Operations",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(lakehouse_object_store_operations_total[5m])",
+            "legendFormat": "{{operation_type}} - {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 7,
+        "title": "Commit Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(lakehouse_commits_total[5m])",
+            "legendFormat": "{{operation_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "Task Failures",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(lakehouse_task_failures_total[5m])",
+            "legendFormat": "{{task_type}} - {{error_type}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 9,
+        "title": "Data Throughput",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(lakehouse_object_store_bytes_read_total[5m])",
+            "legendFormat": "Bytes Read/sec"
+          },
+          {
+            "expr": "rate(lakehouse_object_store_bytes_written_total[5m])",
+            "legendFormat": "Bytes Written/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "unit": "binBps"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+      },
+      {
+        "id": 10,
+        "title": "Compaction Activity",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(lakehouse_compactions_total[5m])",
+            "legendFormat": "{{table_name}} - {{status}}"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 40}
+      },
+      {
+        "id": 11,
+        "title": "Worker Heartbeats",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "lakehouse_worker_heartbeat_last_seen",
+            "legendFormat": "{{worker_id}}"
+          }
+        ],
+        "yAxes": [
+          {
+            "unit": "dateTimeAsIso"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 40}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "refresh": "5s"
+  }
+}
