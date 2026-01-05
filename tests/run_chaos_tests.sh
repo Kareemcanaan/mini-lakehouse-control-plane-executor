@@ -18,15 +18,22 @@ echo
 # Function to check if coordinator is ready
 wait_for_coordinator() {
     echo "Waiting for coordinator to be ready..."
-    for i in {1..30}; do
+    for i in {1..60}; do  # Increased from 30 to 60 attempts
         if curl -s "$COORDINATOR_URL/health" > /dev/null 2>&1; then
-            echo "Coordinator is ready!"
-            return 0
+            # Check if coordinator is fully ready (connected to metadata service)
+            HEALTH_RESPONSE=$(curl -s "$COORDINATOR_URL/health")
+            if echo "$HEALTH_RESPONSE" | grep -q '"metadata_service_connected":true'; then
+                echo "Coordinator is ready and connected to metadata service!"
+                return 0
+            else
+                echo "Coordinator is running but not connected to metadata service..."
+            fi
         fi
-        echo "Attempt $i/30: Coordinator not ready, waiting 5 seconds..."
+        echo "Attempt $i/60: Coordinator not ready, waiting 5 seconds..."
         sleep 5
     done
-    echo "ERROR: Coordinator failed to start within 150 seconds"
+    echo "ERROR: Coordinator failed to start within 300 seconds (5 minutes)"
+    echo "Last health response: $(curl -s "$COORDINATOR_URL/health" 2>/dev/null || echo 'No response')"
     exit 1
 }
 
@@ -187,7 +194,7 @@ verify_system_recovery() {
     curl -X POST "$COORDINATOR_URL/tables" \
         -H "Content-Type: application/json" \
         -d '{
-            "name": "recovery_test",
+            "table_name": "recovery_test",
             "schema": {
                 "fields": [
                     {"name": "id", "type": "int64"},

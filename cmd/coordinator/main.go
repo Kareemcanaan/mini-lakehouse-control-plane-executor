@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"mini-lakehouse/pkg/storage"
 	"mini-lakehouse/proto/gen"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -41,11 +44,11 @@ func main() {
 
 	// Initialize storage client
 	storageConfig := storage.Config{
-		Endpoint:        "localhost:9000",
-		AccessKeyID:     "minioadmin",
-		SecretAccessKey: "minioadmin",
-		BucketName:      "lake",
-		UseSSL:          false,
+		Endpoint:        getEnvOrDefault("MINIO_ENDPOINT", "localhost:9000"),
+		AccessKeyID:     getEnvOrDefault("MINIO_ACCESS_KEY", "minioadmin"),
+		SecretAccessKey: getEnvOrDefault("MINIO_SECRET_KEY", "minioadmin"),
+		BucketName:      getEnvOrDefault("MINIO_BUCKET", "lake"),
+		UseSSL:          getEnvOrDefault("MINIO_USE_SSL", "false") == "true",
 	}
 	storageClient, err := storage.NewClient(storageConfig)
 	if err != nil {
@@ -54,11 +57,7 @@ func main() {
 	}
 
 	// Initialize metadata client manager
-	metadataEndpoints := []string{
-		"localhost:8090", // meta-1
-		"localhost:8091", // meta-2
-		"localhost:8092", // meta-3
-	}
+	metadataEndpoints := parseMetadataEndpoints(getEnvOrDefault("METADATA_ENDPOINTS", "localhost:8080,localhost:8090,localhost:8100"))
 	metadataClientManager := coordinator.NewMetadataClientManager(metadataEndpoints)
 	err = metadataClientManager.Start()
 	if err != nil {
@@ -66,6 +65,14 @@ func main() {
 		log.Fatalf("Failed to start metadata client manager: %v", err)
 	}
 	defer metadataClientManager.Stop()
+
+	// Wait for metadata service to be available
+	obs.Logger.Info("Waiting for metadata service to be available...")
+	if err := waitForMetadataService(metadataClientManager, 60*time.Second); err != nil {
+		obs.Logger.WithError(err).Error("Metadata service not available")
+		log.Fatalf("Metadata service not available: %v", err)
+	}
+	obs.Logger.Info("Metadata service is available")
 
 	// Initialize components with observability
 	workerManager := coordinator.NewWorkerManager()
@@ -108,7 +115,8 @@ func main() {
 	go distributedExecutor.StartBackgroundServices(ctx)
 
 	// Start gRPC server
-	lis, err := net.Listen("tcp", ":8080")
+	grpcBindAddr := getEnvOrDefault("GRPC_BIND_ADDR", ":8070")
+	lis, err := net.Listen("tcp", grpcBindAddr)
 	if err != nil {
 		obs.Logger.WithError(err).Error("Failed to listen on gRPC port")
 		log.Fatalf("Failed to listen: %v", err)
@@ -117,7 +125,7 @@ func main() {
 	grpcServer := grpc.NewServer()
 	gen.RegisterCoordinatorServiceServer(grpcServer, grpcService)
 
-	obs.Logger.Info("Coordinator gRPC server listening on :8080")
+	obs.Logger.Info("Coordinator gRPC server listening", zap.String("bind_addr", grpcBindAddr))
 
 	// Start gRPC server in background
 	go func() {
@@ -159,4 +167,41 @@ func main() {
 	grpcServer.GracefulStop()
 
 	obs.Logger.Info("Coordinator service stopped")
+}
+
+// getEnvOrDefault returns the environment variable value or a default value
+func getEnvOrDefault(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// parseMetadataEndpoints parses a comma-separated list of metadata endpoints
+func parseMetadataEndpoints(endpointsStr string) []string {
+	endpoints := strings.Split(endpointsStr, ",")
+	for i, endpoint := range endpoints {
+		endpoints[i] = strings.TrimSpace(endpoint)
+	}
+	return endpoints
+}
+
+// waitForMetadataService waits for the metadata service to be available
+func waitForMetadataService(metadataClient *coordinator.MetadataClientManager, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("metadata service not available within %v", timeout)
+		case <-ticker.C:
+			if metadataClient.IsHealthy() {
+				return nil
+			}
+		}
+	}
 }

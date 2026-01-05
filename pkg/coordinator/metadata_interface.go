@@ -14,10 +14,11 @@ type MetadataClient interface {
 	GetSnapshot(ctx context.Context, req *gen.GetSnapshotRequest, opts ...grpc.CallOption) (*gen.GetSnapshotResponse, error)
 	Commit(ctx context.Context, req *gen.CommitRequest, opts ...grpc.CallOption) (*gen.CommitResponse, error)
 	ListVersions(ctx context.Context, req *gen.ListVersionsRequest, opts ...grpc.CallOption) (*gen.ListVersionsResponse, error)
+
+	// Health and status methods
+	IsHealthy() bool
+	GetCurrentLeader() string
 }
 
 // Ensure MetadataClientManager implements MetadataClient
 var _ MetadataClient = (*MetadataClientManager)(nil)
-
-// Ensure the gRPC client implements MetadataClient (it does by default)
-var _ MetadataClient = (gen.MetadataServiceClient)(nil)

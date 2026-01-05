@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -16,24 +17,31 @@ import (
 )
 
 func main() {
+	// Define flags for backward compatibility
 	var (
-		nodeID   = flag.String("node-id", "", "Raft node ID")
-		bindAddr = flag.String("bind-addr", "", "Raft bind address")
-		dataDir  = flag.String("data-dir", "", "Data directory")
-		peers    = flag.String("peers", "", "Comma-separated list of peer addresses")
-		grpcPort = flag.Int("grpc-port", 8080, "gRPC server port")
+		nodeIDFlag       = flag.String("node-id", "", "Raft node ID")
+		bindAddrFlag     = flag.String("bind-addr", "", "Raft bind address")
+		dataDirFlag      = flag.String("data-dir", "/data", "Data directory")
+		peersFlag        = flag.String("peers", "", "Comma-separated list of peer addresses")
+		grpcPortFlag     = flag.Int("grpc-port", 8080, "gRPC server port")
+		grpcBindAddrFlag = flag.String("grpc-bind-addr", "0.0.0.0:8080", "gRPC bind address")
 	)
 	flag.Parse()
 
-	// Validate required flags
-	if *nodeID == "" {
-		log.Fatal("node-id is required")
+	// Get configuration from environment variables with fallbacks to flags
+	nodeID := getEnvOrDefault("RAFT_NODE_ID", *nodeIDFlag)
+	bindAddr := getEnvOrDefault("RAFT_BIND_ADDR", *bindAddrFlag)
+	dataDir := getEnvOrDefault("DATA_DIR", *dataDirFlag)
+	peers := getEnvOrDefault("RAFT_PEERS", *peersFlag)
+	grpcBindAddr := getEnvOrDefault("GRPC_BIND_ADDR", *grpcBindAddrFlag)
+	grpcPort := getEnvOrDefaultInt("GRPC_PORT", *grpcPortFlag)
+
+	// Validate required configuration
+	if nodeID == "" {
+		log.Fatal("RAFT_NODE_ID environment variable or -node-id flag is required")
 	}
-	if *bindAddr == "" {
-		log.Fatal("bind-addr is required")
-	}
-	if *dataDir == "" {
-		log.Fatal("data-dir is required")
+	if bindAddr == "" {
+		log.Fatal("RAFT_BIND_ADDR environment variable or -bind-addr flag is required")
 	}
 
 	// Initialize observability
@@ -55,16 +63,21 @@ func main() {
 
 	// Parse peers
 	var peerList []string
-	if *peers != "" {
-		peerList = strings.Split(*peers, ",")
+	if peers != "" {
+		peerList = strings.Split(peers, ",")
+		// Trim whitespace from each peer
+		for i, peer := range peerList {
+			peerList[i] = strings.TrimSpace(peer)
+		}
 	}
 
-	obs.Logger.WithRaft(*nodeID, false, 0, 0).Info("Starting metadata service",
-		zap.String("bind_addr", *bindAddr),
-		zap.String("data_dir", *dataDir))
+	obs.Logger.WithRaft(nodeID, false, 0, 0).Info("Starting metadata service",
+		zap.String("bind_addr", bindAddr),
+		zap.String("data_dir", dataDir),
+		zap.String("grpc_bind_addr", grpcBindAddr))
 
 	// Create service with observability
-	service := metadata.NewService(*nodeID, *bindAddr, *dataDir)
+	service := metadata.NewService(nodeID, bindAddr, dataDir)
 
 	// Start Raft cluster
 	if err := service.Start(peerList); err != nil {
@@ -75,8 +88,9 @@ func main() {
 	// Start gRPC server in a goroutine
 	go func() {
 		obs.Logger.Info("Starting gRPC server",
-			zap.Int("port", *grpcPort))
-		if err := service.StartGRPCServer(*grpcPort); err != nil {
+			zap.String("bind_addr", grpcBindAddr),
+			zap.Int("port", grpcPort))
+		if err := service.StartGRPCServer(grpcPort); err != nil {
 			obs.Logger.WithError(err).Error("Failed to start gRPC server")
 			log.Fatalf("Failed to start gRPC server: %v", err)
 		}
@@ -95,4 +109,22 @@ func main() {
 		log.Printf("Error during shutdown: %v", err)
 	}
 	obs.Logger.Info("Metadata service stopped")
+}
+
+// getEnvOrDefault returns environment variable value or default value
+func getEnvOrDefault(envKey, defaultValue string) string {
+	if value := os.Getenv(envKey); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// getEnvOrDefaultInt returns environment variable value as int or default value
+func getEnvOrDefaultInt(envKey string, defaultValue int) int {
+	if value := os.Getenv(envKey); value != "" {
+		if intVal, err := strconv.Atoi(value); err == nil {
+			return intVal
+		}
+	}
+	return defaultValue
 }

@@ -525,7 +525,7 @@ impl TaskExecutor {
     }
 
     /// Perform GROUP BY aggregation on record batches
-    fn perform_group_by_aggregation(
+    pub fn perform_group_by_aggregation(
         &self,
         batches: &[RecordBatch],
         group_by_columns: &[String],
@@ -769,7 +769,7 @@ impl TaskExecutor {
 
 impl AggregateFunction {
     /// Get the function name as a string
-    fn function_name(&self) -> &'static str {
+    pub fn function_name(&self) -> &'static str {
         match self {
             AggregateFunction::Count => "count",
             AggregateFunction::Sum => "sum",

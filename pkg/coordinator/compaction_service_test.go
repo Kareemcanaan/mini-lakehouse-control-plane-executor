@@ -59,6 +59,16 @@ func (m *MockMetadataClientForCompaction) Health(ctx context.Context, req *gen.H
 	return &gen.HealthResponse{Healthy: true}, nil
 }
 
+// IsHealthy returns true for mock client
+func (m *MockMetadataClientForCompaction) IsHealthy() bool {
+	return true
+}
+
+// GetCurrentLeader returns a mock leader for testing
+func (m *MockMetadataClientForCompaction) GetCurrentLeader() string {
+	return "mock-leader"
+}
+
 func TestCompactionCandidateIdentification(t *testing.T) {
 	// Create mock metadata client with small files
 	mockClient := &MockMetadataClientForCompaction{

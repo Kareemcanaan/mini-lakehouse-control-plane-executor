@@ -147,6 +147,10 @@ func (fsm *StateMachine) applyCommit(data interface{}) interface{} {
 	}
 
 	// Check for duplicate transaction (idempotency)
+	// Ensure transaction map exists for this table
+	if fsm.transactions[cmd.TableName] == nil {
+		fsm.transactions[cmd.TableName] = make(map[string]uint64)
+	}
 	if existingVersion, exists := fsm.transactions[cmd.TableName][cmd.TxnID]; exists {
 		return map[string]interface{}{
 			"new_version": existingVersion,
@@ -176,6 +180,10 @@ func (fsm *StateMachine) applyCommit(data interface{}) interface{} {
 	}
 
 	// Atomically update state
+	// Ensure version map exists for this table
+	if fsm.versions[cmd.TableName] == nil {
+		fsm.versions[cmd.TableName] = make(map[uint64]*LogEntry)
+	}
 	fsm.versions[cmd.TableName][newVersion] = logEntry
 	fsm.transactions[cmd.TableName][cmd.TxnID] = newVersion
 	table.LatestVersion = newVersion

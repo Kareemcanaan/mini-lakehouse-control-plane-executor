@@ -1,10 +1,9 @@
 package chaos
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
+	"mini-lakehouse/tests/common"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -25,7 +24,7 @@ func TestWorkerFailureDuringShuffle(t *testing.T) {
 	tableName := "chaos_worker_test"
 
 	// Ensure system is ready
-	require.NoError(t, waitForCoordinator(coordinatorURL, 60*time.Second), "Coordinator should be ready")
+	require.NoError(t, common.WaitForCoordinator(coordinatorURL, 120*time.Second), "Coordinator should be ready")
 
 	// Setup test
 	t.Run("Setup", func(t *testing.T) {
@@ -43,53 +42,19 @@ func TestWorkerFailureDuringShuffle(t *testing.T) {
 	})
 
 	// Cleanup
-	cleanupTable(coordinatorURL, tableName)
+	common.CleanupTable(coordinatorURL, tableName)
 }
 
-// Test data structures
-type ChaosTestRecord struct {
-	ID       int64   `json:"id"`
-	Category string  `json:"category"`
-	Value    float64 `json:"value"`
-	Data     string  `json:"data"`
-}
-
-type CreateTableRequest struct {
-	Name   string      `json:"name"`
-	Schema TableSchema `json:"schema"`
-}
-
-type TableSchema struct {
-	Fields []Field `json:"fields"`
-}
-
-type Field struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
-
-type InsertDataRequest struct {
-	Data []ChaosTestRecord `json:"data"`
-}
-
-type QueryRequest struct {
-	SQL string `json:"sql"`
-}
-
-type QueryResponse struct {
-	JobID   string                   `json:"job_id"`
-	Results []map[string]interface{} `json:"results"`
-	Status  string                   `json:"status"`
-	Error   string                   `json:"error,omitempty"`
-}
+// Test data structures - using common types
+// (No need to redeclare types that are in common package)
 
 func setupWorkerFailureTest(t *testing.T, coordinatorURL, tableName string) {
 	// Clean up any existing table
-	cleanupTable(coordinatorURL, tableName)
+	common.CleanupTable(coordinatorURL, tableName)
 
 	// Create test table with schema suitable for shuffle operations
-	schema := TableSchema{
-		Fields: []Field{
+	schema := common.TableSchema{
+		Fields: []common.Field{
 			{Name: "id", Type: "int64"},
 			{Name: "category", Type: "string"},
 			{Name: "value", Type: "float64"},
@@ -97,17 +62,17 @@ func setupWorkerFailureTest(t *testing.T, coordinatorURL, tableName string) {
 		},
 	}
 
-	request := CreateTableRequest{
-		Name:   tableName,
-		Schema: schema,
+	request := common.CreateTableRequest{
+		TableName: tableName,
+		Schema:    schema,
 	}
 
-	response := makeRequest(t, "POST", coordinatorURL+"/tables", request)
+	response := common.MakeRequest(t, "POST", coordinatorURL+"/tables", request)
 	assert.Equal(t, http.StatusOK, response.StatusCode, "Table creation should succeed")
 
 	// Insert substantial data to ensure shuffle operations occur
 	// This creates enough data to require multiple workers and shuffle stages
-	testData := generateLargeDataset(1000) // 1000 records across multiple categories
+	testData := common.GenerateLargeDataset(1000) // 1000 records across multiple categories
 
 	// Insert data in batches to simulate realistic workload
 	batchSize := 100
@@ -118,9 +83,9 @@ func setupWorkerFailureTest(t *testing.T, coordinatorURL, tableName string) {
 		}
 
 		batch := testData[i:end]
-		insertRequest := InsertDataRequest{Data: batch}
+		insertRequest := common.InsertDataRequest[common.ChaosTestRecord]{Data: batch}
 
-		insertResponse := makeRequest(t, "POST", coordinatorURL+"/tables/"+tableName+"/insert", insertRequest)
+		insertResponse := common.MakeRequest(t, "POST", coordinatorURL+"/tables/"+tableName+"/insert", insertRequest)
 		assert.Equal(t, http.StatusOK, insertResponse.StatusCode, "Batch %d insertion should succeed", i/batchSize+1)
 
 		// Small delay between batches
@@ -149,19 +114,19 @@ func executeChaosWorkerFailureTest(t *testing.T, coordinatorURL, tableName strin
 	t.Log("Step 1: Starting complex GROUP BY query that requires shuffle operations...")
 
 	// Start query in background
-	queryDone := make(chan QueryResponse, 1)
+	queryDone := make(chan common.QueryResponse, 1)
 	queryError := make(chan error, 1)
 
 	go func() {
-		queryRequest := QueryRequest{SQL: complexQuery}
-		response := makeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
+		queryRequest := common.QueryRequest{SQL: complexQuery}
+		response := common.MakeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
 
 		if response.StatusCode != http.StatusOK {
 			queryError <- fmt.Errorf("query failed with status %d", response.StatusCode)
 			return
 		}
 
-		var queryResult QueryResponse
+		var queryResult common.QueryResponse
 		err := json.NewDecoder(response.Body).Decode(&queryResult)
 		if err != nil {
 			queryError <- fmt.Errorf("failed to decode query response: %v", err)
@@ -179,7 +144,7 @@ func executeChaosWorkerFailureTest(t *testing.T, coordinatorURL, tableName strin
 	t.Log("Step 3: Killing worker-1 during query execution...")
 
 	workerToKill := "mini-lakehouse-worker-1"
-	err := killContainer(workerToKill)
+	err := common.KillContainer(workerToKill)
 	require.NoError(t, err, "Should be able to kill worker container")
 
 	t.Logf("Worker %s killed successfully", workerToKill)
@@ -187,7 +152,7 @@ func executeChaosWorkerFailureTest(t *testing.T, coordinatorURL, tableName strin
 	// Step 4: Wait for query to complete (should succeed with remaining workers)
 	t.Log("Step 4: Waiting for query to complete despite worker failure...")
 
-	var queryResult QueryResponse
+	var queryResult common.QueryResponse
 	select {
 	case result := <-queryDone:
 		queryResult = result
@@ -229,7 +194,7 @@ func executeChaosWorkerFailureTest(t *testing.T, coordinatorURL, tableName strin
 	// Step 6: Restart the killed worker
 	t.Log("Step 6: Restarting the killed worker...")
 
-	err = startContainer(workerToKill)
+	err = common.StartContainer(workerToKill)
 	require.NoError(t, err, "Should be able to restart worker container")
 
 	// Wait for worker to register with coordinator
@@ -259,11 +224,11 @@ func verifySystemRecovery(t *testing.T, coordinatorURL, tableName string) {
 		ORDER BY category
 	`, tableName)
 
-	queryRequest := QueryRequest{SQL: verificationQuery}
-	response := makeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
+	queryRequest := common.QueryRequest{SQL: verificationQuery}
+	response := common.MakeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
 	assert.Equal(t, http.StatusOK, response.StatusCode, "Verification query should succeed")
 
-	var queryResult QueryResponse
+	var queryResult common.QueryResponse
 	err := json.NewDecoder(response.Body).Decode(&queryResult)
 	require.NoError(t, err, "Should decode verification query response")
 
@@ -277,12 +242,12 @@ func verifySystemRecovery(t *testing.T, coordinatorURL, tableName string) {
 
 	// Execute a simple query that should create SUCCESS manifests
 	simpleQuery := fmt.Sprintf("SELECT COUNT(*) as total FROM %s", tableName)
-	simpleRequest := QueryRequest{SQL: simpleQuery}
+	simpleRequest := common.QueryRequest{SQL: simpleQuery}
 
-	simpleResponse := makeRequest(t, "POST", coordinatorURL+"/query", simpleRequest)
+	simpleResponse := common.MakeRequest(t, "POST", coordinatorURL+"/query", simpleRequest)
 	assert.Equal(t, http.StatusOK, simpleResponse.StatusCode, "Simple query should succeed")
 
-	var simpleResult QueryResponse
+	var simpleResult common.QueryResponse
 	err = json.NewDecoder(simpleResponse.Body).Decode(&simpleResult)
 	require.NoError(t, err, "Should decode simple query response")
 
@@ -293,104 +258,6 @@ func verifySystemRecovery(t *testing.T, coordinatorURL, tableName string) {
 	assert.Equal(t, 1000.0, totalCount, "Should have all 1000 records")
 
 	t.Log("✅ SUCCESS manifest behavior verified")
-}
-
-// Helper functions
-
-func generateLargeDataset(size int) []ChaosTestRecord {
-	categories := []string{"Electronics", "Furniture", "Books", "Clothing", "Sports"}
-	data := make([]ChaosTestRecord, size)
-
-	for i := 0; i < size; i++ {
-		category := categories[i%len(categories)]
-		value := float64(10 + (i % 200)) // Values from 10 to 209
-
-		data[i] = ChaosTestRecord{
-			ID:       int64(i + 1),
-			Category: category,
-			Value:    value,
-			Data:     fmt.Sprintf("test_data_%d_%s", i+1, category),
-		}
-	}
-
-	return data
-}
-
-func killContainer(containerName string) error {
-	cmd := exec.Command("docker", "kill", containerName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to kill container %s: %v, output: %s", containerName, err, string(output))
-	}
-	return nil
-}
-
-func startContainer(containerName string) error {
-	cmd := exec.Command("docker", "start", containerName)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("failed to start container %s: %v, output: %s", containerName, err, string(output))
-	}
-	return nil
-}
-
-func waitForCoordinator(coordinatorURL string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("coordinator not ready within %v", timeout)
-		case <-ticker.C:
-			resp, err := http.Get(coordinatorURL + "/health")
-			if err == nil && resp.StatusCode == http.StatusOK {
-				resp.Body.Close()
-				return nil
-			}
-			if resp != nil {
-				resp.Body.Close()
-			}
-		}
-	}
-}
-
-func makeRequest(t *testing.T, method, url string, body interface{}) *http.Response {
-	var reqBody *bytes.Buffer
-
-	if body != nil {
-		jsonData, err := json.Marshal(body)
-		require.NoError(t, err, "Should marshal request body")
-		reqBody = bytes.NewBuffer(jsonData)
-	} else {
-		reqBody = bytes.NewBuffer(nil)
-	}
-
-	req, err := http.NewRequest(method, url, reqBody)
-	require.NoError(t, err, "Should create HTTP request")
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	client := &http.Client{Timeout: 60 * time.Second} // Longer timeout for chaos tests
-	resp, err := client.Do(req)
-	require.NoError(t, err, "Should execute HTTP request")
-
-	return resp
-}
-
-func cleanupTable(coordinatorURL, tableName string) {
-	// Attempt to delete table (ignore errors as table may not exist)
-	req, _ := http.NewRequest("DELETE", coordinatorURL+"/tables/"+tableName, nil)
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err == nil && resp != nil {
-		resp.Body.Close()
-	}
 }
 
 // Additional helper to check container status

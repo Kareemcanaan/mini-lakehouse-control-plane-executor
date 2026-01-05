@@ -1,10 +1,9 @@
 package integration
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
+	"mini-lakehouse/tests/common"
 	"net/http"
 	"testing"
 	"time"
@@ -20,10 +19,10 @@ func TestGoldenQuery(t *testing.T) {
 	tableName := "golden_test_table"
 
 	// Wait for coordinator to be ready
-	require.NoError(t, waitForCoordinator(coordinatorURL, 60*time.Second), "Coordinator should be ready")
+	require.NoError(t, common.WaitForCoordinator(coordinatorURL, 120*time.Second), "Coordinator should be ready")
 
 	// Clean up any existing table
-	cleanupTable(coordinatorURL, tableName)
+	common.CleanupTable(coordinatorURL, tableName)
 
 	t.Run("CreateTable", func(t *testing.T) {
 		testCreateTable(t, coordinatorURL, tableName)
@@ -42,47 +41,11 @@ func TestGoldenQuery(t *testing.T) {
 	})
 
 	// Cleanup
-	cleanupTable(coordinatorURL, tableName)
+	common.CleanupTable(coordinatorURL, tableName)
 }
 
-// Table schema for the golden test
-type TableSchema struct {
-	Fields []Field `json:"fields"`
-}
-
-type Field struct {
-	Name string `json:"name"`
-	Type string `json:"type"`
-}
-
-// Test data structures
-type TestRecord struct {
-	ID       int64   `json:"id"`
-	Category string  `json:"category"`
-	Product  string  `json:"product"`
-	Price    float64 `json:"price"`
-	Quantity int64   `json:"quantity"`
-	Date     string  `json:"date"`
-}
-
-type CreateTableRequest struct {
-	Name   string      `json:"name"`
-	Schema TableSchema `json:"schema"`
-}
-
-type InsertDataRequest struct {
-	Data []TestRecord `json:"data"`
-}
-
-type QueryRequest struct {
-	SQL string `json:"sql"`
-}
-
-type QueryResponse struct {
-	JobID   string                   `json:"job_id"`
-	Results []map[string]interface{} `json:"results"`
-	Status  string                   `json:"status"`
-}
+// Test data structures - using common types
+// (No need to redeclare types that are in common package)
 
 // Expected results for the golden query
 type ExpectedGroupByResult struct {
@@ -93,8 +56,8 @@ type ExpectedGroupByResult struct {
 }
 
 func testCreateTable(t *testing.T, coordinatorURL, tableName string) {
-	schema := TableSchema{
-		Fields: []Field{
+	schema := common.TableSchema{
+		Fields: []common.Field{
 			{Name: "id", Type: "int64"},
 			{Name: "category", Type: "string"},
 			{Name: "product", Type: "string"},
@@ -104,22 +67,22 @@ func testCreateTable(t *testing.T, coordinatorURL, tableName string) {
 		},
 	}
 
-	request := CreateTableRequest{
-		Name:   tableName,
-		Schema: schema,
+	request := common.CreateTableRequest{
+		TableName: tableName,
+		Schema:    schema,
 	}
 
-	response := makeRequest(t, "POST", coordinatorURL+"/tables", request)
+	response := common.MakeRequest(t, "POST", coordinatorURL+"/tables", request)
 	assert.Equal(t, http.StatusOK, response.StatusCode, "Table creation should succeed")
 
 	// Verify table exists
-	getResponse := makeRequest(t, "GET", coordinatorURL+"/tables/"+tableName, nil)
+	getResponse := common.MakeRequest(t, "GET", coordinatorURL+"/tables/"+tableName, nil)
 	assert.Equal(t, http.StatusOK, getResponse.StatusCode, "Table should exist after creation")
 }
 
 func testInsertDeterministicData(t *testing.T, coordinatorURL, tableName string) {
 	// Deterministic test data for predictable results
-	testData := []TestRecord{
+	testData := []common.TestRecord{
 		// Electronics category - 4 items
 		{ID: 1, Category: "Electronics", Product: "Laptop", Price: 1000.00, Quantity: 2, Date: "2024-01-01"},
 		{ID: 2, Category: "Electronics", Product: "Mouse", Price: 25.00, Quantity: 5, Date: "2024-01-01"},
@@ -136,17 +99,17 @@ func testInsertDeterministicData(t *testing.T, coordinatorURL, tableName string)
 		{ID: 9, Category: "Books", Product: "Textbook", Price: 80.00, Quantity: 3, Date: "2024-01-05"},
 	}
 
-	request := InsertDataRequest{Data: testData}
+	request := common.InsertDataRequest[common.TestRecord]{Data: testData}
 
-	response := makeRequest(t, "POST", coordinatorURL+"/tables/"+tableName+"/insert", request)
+	response := common.MakeRequest(t, "POST", coordinatorURL+"/tables/"+tableName+"/insert", request)
 	assert.Equal(t, http.StatusOK, response.StatusCode, "Data insertion should succeed")
 
 	// Verify data was inserted by counting records
-	countQuery := QueryRequest{SQL: fmt.Sprintf("SELECT COUNT(*) as total FROM %s", tableName)}
-	countResponse := makeRequest(t, "POST", coordinatorURL+"/query", countQuery)
+	countQuery := common.QueryRequest{SQL: fmt.Sprintf("SELECT COUNT(*) as total FROM %s", tableName)}
+	countResponse := common.MakeRequest(t, "POST", coordinatorURL+"/query", countQuery)
 	assert.Equal(t, http.StatusOK, countResponse.StatusCode, "Count query should succeed")
 
-	var queryResult QueryResponse
+	var queryResult common.QueryResponse
 	err := json.NewDecoder(countResponse.Body).Decode(&queryResult)
 	require.NoError(t, err, "Should decode count query response")
 
@@ -168,12 +131,12 @@ func testExecuteGoldenQuery(t *testing.T, coordinatorURL, tableName string) {
 		ORDER BY category
 	`, tableName)
 
-	queryRequest := QueryRequest{SQL: goldenSQL}
+	queryRequest := common.QueryRequest{SQL: goldenSQL}
 
-	response := makeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
+	response := common.MakeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
 	assert.Equal(t, http.StatusOK, response.StatusCode, "Golden query should succeed")
 
-	var queryResult QueryResponse
+	var queryResult common.QueryResponse
 	err := json.NewDecoder(response.Body).Decode(&queryResult)
 	require.NoError(t, err, "Should decode golden query response")
 
@@ -225,7 +188,7 @@ func testExecuteGoldenQuery(t *testing.T, coordinatorURL, tableName string) {
 
 func testVerifySnapshotIsolation(t *testing.T, coordinatorURL, tableName string) {
 	// Get current version
-	versionResponse := makeRequest(t, "GET", coordinatorURL+"/tables/"+tableName+"/versions", nil)
+	versionResponse := common.MakeRequest(t, "GET", coordinatorURL+"/tables/"+tableName+"/versions", nil)
 	assert.Equal(t, http.StatusOK, versionResponse.StatusCode, "Should get table versions")
 
 	// Execute the same query multiple times to ensure consistent results
@@ -239,15 +202,15 @@ func testVerifySnapshotIsolation(t *testing.T, coordinatorURL, tableName string)
 		ORDER BY category
 	`, tableName)
 
-	var firstResult QueryResponse
+	var firstResult common.QueryResponse
 
 	// Execute query multiple times
 	for i := 0; i < 3; i++ {
-		queryRequest := QueryRequest{SQL: goldenSQL}
-		response := makeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
+		queryRequest := common.QueryRequest{SQL: goldenSQL}
+		response := common.MakeRequest(t, "POST", coordinatorURL+"/query", queryRequest)
 		assert.Equal(t, http.StatusOK, response.StatusCode, "Query %d should succeed", i+1)
 
-		var queryResult QueryResponse
+		var queryResult common.QueryResponse
 		err := json.NewDecoder(response.Body).Decode(&queryResult)
 		require.NoError(t, err, "Should decode query response %d", i+1)
 
@@ -274,65 +237,4 @@ func testVerifySnapshotIsolation(t *testing.T, coordinatorURL, tableName string)
 	}
 
 	t.Log("Snapshot isolation verified: multiple queries returned identical results")
-}
-
-// Helper functions
-
-func waitForCoordinator(coordinatorURL string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("coordinator not ready within %v", timeout)
-		case <-ticker.C:
-			resp, err := http.Get(coordinatorURL + "/health")
-			if err == nil && resp.StatusCode == http.StatusOK {
-				resp.Body.Close()
-				return nil
-			}
-			if resp != nil {
-				resp.Body.Close()
-			}
-		}
-	}
-}
-
-func makeRequest(t *testing.T, method, url string, body interface{}) *http.Response {
-	var reqBody *bytes.Buffer
-
-	if body != nil {
-		jsonData, err := json.Marshal(body)
-		require.NoError(t, err, "Should marshal request body")
-		reqBody = bytes.NewBuffer(jsonData)
-	} else {
-		reqBody = bytes.NewBuffer(nil)
-	}
-
-	req, err := http.NewRequest(method, url, reqBody)
-	require.NoError(t, err, "Should create HTTP request")
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	require.NoError(t, err, "Should execute HTTP request")
-
-	return resp
-}
-
-func cleanupTable(coordinatorURL, tableName string) {
-	// Attempt to delete table (ignore errors as table may not exist)
-	req, _ := http.NewRequest("DELETE", coordinatorURL+"/tables/"+tableName, nil)
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err == nil && resp != nil {
-		resp.Body.Close()
-	}
 }
